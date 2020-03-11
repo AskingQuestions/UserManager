@@ -1,0 +1,46 @@
+info {
+	"name": "user-unverified-status",
+	"type": "component"
+}
+
+template {
+	<div class="user-unverified-status">
+		<loader :active="loading">
+			<status-box message="This account's email is unverified. Please follow the instructions in the email we sent you to verify it." status="error" class="api-form-status" />
+			<div class="mini-options">
+				<div v-if="!sent">Didn't receive an email? <a @click="resend">Resend it.</a></div>
+				<div v-else>Verification email sent!</div>
+
+				<a v-if="sent">Still having trouble?</a>
+			</div>
+		</loader>
+	</div>
+}
+
+script {
+	export default {
+		props: {
+			context: {
+				type: Object,
+				default: {}
+			}
+		},
+		data: () => ({
+			sent: false,
+			loading: false
+		}),
+		methods: {
+			async resend() {
+				this.loading = true;
+				await this.websom.fetch("/resend-verification-email", {id: this.context.id});
+				this.loading = false;
+
+				this.sent = true;
+
+				setTimeout(() => {
+					this.sent = false;
+				}, 10000);
+			}
+		}
+	}
+}

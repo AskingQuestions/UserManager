@@ -1,0 +1,3 @@
+class UserManager.Login extends Websom.Entity, Websom.Standard.UserSystem.Login {
+	
+}

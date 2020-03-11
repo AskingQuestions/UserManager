@@ -1,0 +1,208 @@
+info {
+	"name": "user-modal",
+	"type": "component"
+}
+
+template {
+	<div>
+		<modal ref="modal" size="full" modal-class="center-content">
+			<card>
+				<div slot="body" class="login-container" :class="'login-container-' + (overrideMode || mode)">
+					<div class="login-container-logo">
+						<img :src="logo" />
+						<h1>{{overrideMode || mode}}</h1>
+					</div>
+					<div class="login-slide">
+						<transition name="slide">
+							<div class="user-login" v-if="(overrideMode || mode) == 'login'" key="login">
+								<api-form route="/login" ref="loginForm">
+									<input-text name="username" placeholder="Username" icon="user" v-model="login.username" />
+									<input-text name="password" type="password" placeholder="Password" icon="key" v-model="login.password" />
+
+									<button class="full user-login-button" @click="submitLogin()">Login</button>
+								</api-form>
+
+								<div class="mini-options">
+									<a>Forgot your password?</a>
+									<a @click="setMode('signup')">Don't have an account?</a>
+								</div>
+							</div>
+							<div class="user-signup" v-if="(overrideMode || mode) == 'signup'" key="signup">
+								<api-form route="/users/create" ref="signupForm">
+									<input-text name="username" placeholder="Username" icon="user" v-model="signup.username" validate="/users/create.username" />
+									<input-text name="email" placeholder="Email" icon="email" v-model="signup.email" validate="/users/create.email" />
+									<input-text name="password" type="password" placeholder="Password" icon="key" v-model="signup.password" validate="/users/create.password" />
+									<input-text name="password" type="password" placeholder="Retype Password" icon="check" v-model="signup.passwordVerify" :validate="matchPasswords" />
+
+									<button class="full user-login-button" @click="submitSignup()">Sign Up</button>
+								</api-form>
+
+								<div class="mini-options">
+									<a>Need help?</a>
+									<a @click="setMode('login')">Already have an account?</a>
+								</div>
+							</div>
+						</transition>
+					</div>
+
+					<button class="user-cancel full mute" @click="cancel()">Cancel</button>
+				</div>
+			</card>
+		</modal>
+	</div>
+}
+
+script {
+	export default {
+		props: {
+			mode: {
+				type: String,
+				default: "login"
+			}
+		},
+		data: () => ({
+			overrideMode: null,
+			login: {
+				username: "",
+				password: ""
+			},
+			signup: {
+				email: "",
+				username: "",
+				password: "",
+				passwordVerify: ""
+			}
+		}),
+		methods: {
+			open() {
+				this.$refs.modal.open();
+			},
+			cancel() {
+				this.login.username = "";
+				this.login.password = "";
+
+				this.$refs.modal.close();
+			},
+			setMode(mode) {
+				this.overrideMode = mode;
+			},
+			submitLogin() {
+				console.log("Submit login");
+				this.$refs.loginForm.submit({
+					login: this.login.username,
+					password: this.login.password
+				});
+			},
+			submitSignup() {
+				this.$refs.signupForm.submit({
+					document: this.signup
+				});
+			},
+			matchPasswords(value) {
+				if (value.length == 0)
+					return "Invalid password";
+
+				if (this.signup.password != value)
+					return "Passwords do not match";
+
+				return true;
+			}
+		},
+		computed: {
+			logo() {
+				if (this.$config.logo != "") {
+					return this.$config.logo;
+				}else{
+					return this.$store.state.assets.logo;
+				}
+			}
+		}
+	}
+}
+
+style {
+	.login-container {
+		width: 350px;
+		height: 600px;
+
+		overflow: hidden;
+
+		position: relative;
+
+		display: flex;
+		flex-direction: column;
+
+		justify-content: flex-start;
+
+		@media (max-width: 424px) {
+			width: 100vw;
+			height: 100vh;
+		}
+
+		& > .login-container-logo {
+			text-transform: capitalize;
+
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+
+			& > img {
+				max-width: 50%;
+
+				transition: var(--transition-movement) var(--transition-easing-movement);
+			}
+		}
+
+		&.login-container-signup > .login-container-logo > img {
+			max-width: 25%;
+		}
+	}
+
+	.user-cancel {
+		position: absolute;
+		bottom: 0;
+	}
+
+	.user-login-button {
+		margin-top: var(--base-size);
+	}
+
+	.login-slide {
+		position: relative;
+
+		& > * {
+			position: absolute;
+			top: 0;
+			width: 100%;
+		}
+	}
+
+	.slide-enter-active {
+		transition: all var(--transition-movement) var(--transition-easing-movement);
+	}
+
+	.slide-leave-active {
+		transition: all var(--transition-movement) var(--transition-easing-movement);
+	}
+
+	.slide-enter {
+		transform: translateX(100%);
+	}
+
+	.slide-leave-to {
+		transform: translateX(-100%);
+	}
+}
+
+config {
+	"options": {
+		"logo": {
+			"type": "string",
+			"name": "Login modal image",
+			"description": "The image to use on the login/signup screen",
+			"default": "",
+			"helper": "image"
+		}
+	}
+}

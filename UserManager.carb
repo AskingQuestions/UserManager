@@ -1,0 +1,219 @@
+#include "src/server/entities"
+
+namespace UserManager {}
+
+class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Module {
+	public Websom.Permission userCreate = null;
+	public Websom.Permission userGet = null;
+	public Websom.Permission loginView = null;
+
+	Websom.Calculators.KeyCount groupCounts = null;
+
+	override Websom.Status start() {
+		this.server.confirmation.handleConfirmation("emailVerification", void (Websom.Adapters.Confirmation.Execution exec) => {
+			Console.log(exec.key);
+		});
+	}
+
+	override void registerWithServer() {
+		this.server.userSystem =this;
+	}
+
+	override void permissions() {
+		this.userGet = new Websom.Permission("User.Get");
+		this.userGet.description = "Allows the public to read users (username, and time created) querying on their id.";
+		this.userGet.public = true;
+		
+		this.userCreate = new Websom.Permission("User.Create");
+		this.userCreate.description = "Allows the public to create a user account.";
+		this.userCreate.public = true;
+		
+		this.registerPermission(this.userCreate);
+		this.registerPermission(this.userGet);
+
+		this.loginView = new Websom.Permission("LoginAttempts.View");
+		this.loginView.description = "Administrator view";
+		
+		this.registerPermission(this.loginView);
+	}
+
+	override UserManager.User getUserFromRequest(Websom.Request req) {
+		let userId = req.session.get("user");
+
+		if (userId == null)
+			return null;
+
+		let UserManager.User user = this.users.getEntity(userId);
+
+		return user;
+	}
+
+	override void collections() {
+		let db = this.server.database.central;
+
+		this.users = db.collection("users");
+
+		this.groupCounts = new Websom.Calculators.KeyCount("groups", "array");
+
+		UserManager.User.applySchema(this.users)
+			.calc("groupCounts", this.groupCounts)
+			.index()
+				.field("name", "==")
+				.field("created", "dsc");
+			
+		this.registerCollection(this.users);
+
+		this.logins = db.collection("logins");
+
+		UserManager.Login.applySchema(this.logins)
+			.index()
+				.field("user", "==")
+				.field("created", "dsc");
+
+		this.registerCollection(this.logins);
+
+		this.server.api.interface(this.logins, "/logins")
+			.route("/search")
+				.auth(this.loginView)
+					.executes("select")
+						.read("user")
+						.read("created")
+						.read("id")
+						.read("flagged")
+						.read("success")
+						.read("location")
+						.read("ip")
+						.filter("default")
+						.filter("user")
+							.field("user", "==");
+
+		this.server.api.interface(this.users, "/users")
+			.route("/create")
+				.auth(this.userCreate)
+				.executes("insert")
+					.write("username")
+						.format("single-line")
+						.regexTest("^([A-Za-z0-9_-]*)$")
+						.limit(3, 256)
+						.unique()
+					.write("password")
+						.regexTest("^[ -~]*$")
+						.limit(8, 256)
+						.mutate(primitive (Websom.Adapters.Database.Collection collection, Websom.Request req, string value) => {
+							return this.server.crypto.hashPassword(value);
+						})
+					.write("email")
+						.format("email")
+						.unique()
+					.setComputed("created", uint64 (Websom.Request req) => {
+						return Websom.Time.now();
+					})
+					.set("banned", false)
+					.set("verified", false)
+					.set("locked", false)
+					.set("connected", false)
+					.set("groups", new <string>array())
+			.route("/get")
+				.auth(this.userGet)
+				.executes("select")
+					.read("username")
+					.read("created")
+					.filter("default");
+
+		this.server.api.route("/login")
+			.input("login")
+				.type("string")
+				.limit(3, 256)
+			.input("password")
+				.type("string")
+				.limit(8, 256)
+			.executes(void (Websom.APIContext ctx) => {
+				let string login = ctx.get("login");
+				let string password = ctx.get("password");
+
+				let emailValidator = new Websom.Restrictions.Format("email");
+
+				let Websom.Adapters.Database.SelectQueryResult userResults = null;
+
+				if (emailValidator.testServer(null, null, login)) {
+					userResults = this.users.where("email", "==", login).get();
+				}else{
+					userResults = this.users.where("username", "==", login).get();
+				}
+
+				if (userResults.documents.length == 0) {
+					ctx.request.endWithError("Invalid username or password");
+					return null;
+				}
+
+				let UserManager.User user = this.users.makeEntity(userResults.documents[0]);
+
+				let passedPassword = this.server.crypto.verifyPassword(user.password, password);
+
+				if (user.verified == false) {
+					let mp = new map();
+					mp["id"] = user.id;
+					ctx.request.endWithComponent("user-unverified-status", mp);
+
+					return null;
+				}
+
+				if (passedPassword) {
+					this.logLogin(ctx.request.client.address, "", user, true, false);
+					ctx.request.session.set("user", user.id);
+					ctx.request.endWithSuccess("Login successful");
+				}else{
+					this.logLogin(ctx.request.client.address, "", user, false, false);
+					ctx.request.endWithError("Invalid username or password");
+				}
+			});
+
+		this.server.api.route("/resend-verification-email")
+			.input("id")
+				.type("string")
+				.limit(1, 255)
+			.executes(void (Websom.APIContext ctx) => {
+				let UserManager.User user = this.users.getEntity(ctx.get("id"));
+
+				if (user == null) {
+					ctx.request.endWithError("Invalid id");
+					return null;
+				}
+
+				if (this.sendVerificationEmail(user)) {
+					ctx.request.endWithSuccess("Verification sent");
+				}else{
+					ctx.request.endWithError("Error while sending verification");
+				}
+			});
+	}
+
+	bool sendVerificationEmail(UserManager.User user) {
+		let mp = new map();
+		mp["id"] = user.id;
+
+		Console.log("Sending email to " + user.email);
+
+		this.server.confirmation.confirm("emailVerification")
+			.via("email")
+			.using("link")
+			.to(user.email)
+			.store(mp)
+			.subject("Email verification")
+			.message("Click here to finalize your account verification.")
+			.dispatch();
+		
+		return true;
+	}
+
+	void logLogin(string ip, string location, UserManager.User user, bool success, bool flagged) {
+		this.logins.insert()
+			.set("created", Websom.Time.now())
+			.set("ip", ip)
+			.set("location", location)
+			.set("user", user.id)
+			.set("success", success)
+			.set("flagged", flagged)
+			.run();
+	}
+}

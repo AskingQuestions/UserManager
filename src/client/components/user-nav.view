@@ -1,0 +1,31 @@
+info {
+	"name": "user-nav",
+	"type": "component"
+}
+
+template {
+	<div class="nav-item">
+		<icon icon="user" />
+
+		<dropdown>
+			<button @click="open('login')">Login</button>
+			<button @click="open('signup')">Sign Up</button>
+		</dropdown>
+
+		<user-modal ref="modal" :mode="mode"/>
+	</div>
+}
+
+script {
+	export default {
+		data: () => ({
+			mode: "login"
+		}),
+		methods: {
+			open(mode) {
+				this.mode = mode;
+				this.$refs.modal.open();
+			}
+		}
+	}
+}

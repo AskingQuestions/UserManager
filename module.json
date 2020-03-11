@@ -1,0 +1,15 @@
+{
+	"name": "UserManager",
+	"key": "user-manager",
+	"resources": [
+		{
+			"path": "./src/client/components"
+		},
+		{
+			"path": "./src/client/effects"
+		},
+		{
+			"path": "./src/client/styles"
+		}
+	]
+}

@@ -1,0 +1,3 @@
+class UserManager.User extends Websom.Entity, Websom.Standard.UserSystem.User {
+	
+}
