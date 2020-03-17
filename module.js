@@ -7,7 +7,7 @@ UserManager = function () {var _c_this = this;
 
 }
 
-UserManager.Module = function () {var _c_this = this;
+UserManager.Module = function (server) {var _c_this = this;
 	this.userCreate = null;
 
 	this.userGet = null;
@@ -46,30 +46,23 @@ UserManager.Module = function () {var _c_this = this;
 
 	this.logins = null;
 
-	if (arguments.length == 1 && ((arguments[0] instanceof Websom.Server) || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
-		var server = arguments[0];
 		_c_this.server = server;
 		_c_this.registerWithServer();
-	}
-
 }
 
 /*i async*/UserManager.Module.prototype.start = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
-		_c_this.server.confirmation.handleConfirmation("emailVerification", function (exec) {
-			console.log(exec.key);
-			});
-	}
-}
+		_c_this.server.confirmation.handleConfirmation("emailVerification", async function (exec) {
+/*async*/
+			var id = exec.storage["id"];
+			var user = (await _c_this.users.getEntity/* async call */(id));
+			user.verified = true;
+			(await user.saveToCollection/* async call */());
+			});}
 
 UserManager.Module.prototype.registerWithServer = function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
-		_c_this.server.userSystem = _c_this;
-	}
-}
+		_c_this.server.userSystem = _c_this;}
 
 UserManager.Module.prototype.permissions = function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
 		_c_this.userGet = new Websom.Permission("User.Get");
 		_c_this.userGet.description = "Allows the public to read users (username, and time created) querying on their id.";
 		_c_this.userGet.public = true;
@@ -80,25 +73,18 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 		_c_this.registerPermission(_c_this.userGet);
 		_c_this.loginView = new Websom.Permission("LoginAttempts.View");
 		_c_this.loginView.description = "Administrator view";
-		_c_this.registerPermission(_c_this.loginView);
-	}
-}
+		_c_this.registerPermission(_c_this.loginView);}
 
-/*i async*/UserManager.Module.prototype.getUserFromRequest = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 1 && ((arguments[0] instanceof Websom.Request) || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
-		var req = arguments[0];
+/*i async*/UserManager.Module.prototype.getUserFromRequest = async function (req) {var _c_this = this; var _c_root_method_arguments = arguments;
 /*async*/
-		var userId = req.session.get("user");
+		var userId = (await req.session.get/* async call */("user"));
 		if (userId == null) {
 			return null;
 			}
 		var user = (await _c_this.users.getEntity/* async call */(userId));
-		return user;
-	}
-}
+		return user;}
 
 /*i async*/UserManager.Module.prototype.collections = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
 /*async*/
 		var db = _c_this.server.database.central;
 		_c_this.users = db.collection("users");
@@ -108,12 +94,33 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 		_c_this.logins = db.collection("logins");
 		UserManager.Login.applySchema(_c_this.logins).index().field("user", "==").field("created", "dsc");
 		(await _c_this.registerCollection/* async call */(_c_this.logins));
-		_c_this.server.api.interface(_c_this.logins, "/logins").route("/search").auth(_c_this.loginView).executes("select").read("user").read("created").read("id").read("flagged").read("success").read("location").read("ip").filter("default").filter("user").field("user", "==");
-		_c_this.server.api.interface(_c_this.users, "/users").route("/create").auth(_c_this.userCreate).executes("insert").write("username").format("single-line").regexTest("^([A-Za-z0-9_-]*)$").limit(3, 256).unique().write("password").regexTest("^[ -~]*$").limit(8, 256).mutate(function (collection, req, value) {
-			return _c_this.server.crypto.hashPassword(value);
+		_c_this.server.api.interface(_c_this.logins, "/logins").route("/search").auth(_c_this.loginView).executes("select").read("id").read("user").read("created").read("id").read("flagged").read("success").read("location").read("ip").filter("default").filter("user").field("user", "==");
+		_c_this.server.api.interface(_c_this.users, "/users").route("/create").auth(_c_this.userCreate).executes("insert").write("username").format("single-line").regexTest("^([A-Za-z0-9_-]*)$").limit(3, 256).unique().write("password").regexTest("^[ -~]*$").limit(8, 256).mutate(async function (collection, req, value) {
+/*async*/
+			return (await _c_this.server.crypto.hashPassword/* async call */(value));
 			}).write("email").format("email").unique().setComputed("created", function (req) {
 			return Websom.Time.now();
-			}).set("banned", false).set("verified", false).set("locked", false).set("connected", false).set("groups", []).route("/get").auth(_c_this.userGet).executes("select").read("username").read("created").filter("default");
+			}).set("banned", false).set("verified", false).set("locked", false).set("connected", false).set("connectedAdapter", "").set("groups", []).route("/get").auth(_c_this.userGet).executes("select").read("username").read("created").read("id").read("bio").read("social").read("nickname").filter("default").field("id", "==").route("user-info").auth(_c_this.userGet).executes("select").read("id").read("username").read("created").read("email").read("firstName").read("lastName").filter("default", async function (req, query) {
+/*async*/
+			var userId = (await req.session.get/* async call */("user"));
+			if (userId == null) {
+/*async*/
+				(await req.endWithError/* async call */("Not logged in"));
+				return null;
+				}
+			query.where("id", "==", userId);
+			});
+		_c_this.server.api.route("/users/connection-sign-in").auth(_c_this.userCreate).input("adapter").type("string").input("data").type("map").executes(async function (ctx) {
+/*async*/
+			var adapter = ctx.get("adapter");
+			var data = ctx.get("data");
+			(await _c_this.handleConnectionSignin/* async call */(ctx.request, adapter, data));
+			});
+		_c_this.server.api.route("/logout").executes(async function (ctx) {
+/*async*/
+			ctx.request.session.delete("user");
+			(await ctx.request.endWithSuccess/* async call */("Signed out"));
+			});
 		_c_this.server.api.route("/login").input("login").type("string").limit(3, 256).input("password").type("string").limit(8, 256).executes(async function (ctx) {
 /*async*/
 			var login = ctx.get("login");
@@ -128,95 +135,131 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 					userResults = (await _c_this.users.where("username", "==", login).get/* async call */());
 				}
 			if (userResults.documents.length == 0) {
-				ctx.request.endWithError("Invalid username or password");
+/*async*/
+				(await ctx.request.endWithError/* async call */("Invalid username or password"));
 				return null;
 				}
 			var user = (await _c_this.users.makeEntity/* async call */(userResults.documents[0]));
-			var passedPassword = _c_this.server.crypto.verifyPassword(user.password, password);
+			var passedPassword = (await _c_this.server.crypto.verifyPassword/* async call */(user.password, password));
 			if (user.verified == false) {
+/*async*/
 				var mp = {};
 				mp["id"] = user.id;
-				ctx.request.endWithComponent("user-unverified-status", mp);
+				(await ctx.request.endWithComponent/* async call */("user-unverified-status", mp));
+				return null;
+				}
+			if (user.connected) {
+/*async*/
+				(await ctx.request.endWithError/* async call */("Please login using " + user.connectedAdapter));
 				return null;
 				}
 			if (passedPassword) {
 /*async*/
 				(await _c_this.logLogin/* async call */(ctx.request.client.address, "", user, true, false));
 				ctx.request.session.set("user", user.id);
-				ctx.request.endWithSuccess("Login successful");
+				(await ctx.request.endWithSuccess/* async call */("Login successful"));
 				}else{
 /*async*/
 					(await _c_this.logLogin/* async call */(ctx.request.client.address, "", user, false, false));
-					ctx.request.endWithError("Invalid username or password");
+					(await ctx.request.endWithError/* async call */("Invalid username or password"));
 				}
 			});
 		_c_this.server.api.route("/resend-verification-email").input("id").type("string").limit(1, 255).executes(async function (ctx) {
 /*async*/
 			var user = (await _c_this.users.getEntity/* async call */(ctx.get("id")));
 			if (user == null) {
-				ctx.request.endWithError("Invalid id");
+/*async*/
+				(await ctx.request.endWithError/* async call */("Invalid id"));
 				return null;
 				}
 			if ((await _c_this.sendVerificationEmail/* async call */(user))) {
-				ctx.request.endWithSuccess("Verification sent");
+/*async*/
+				(await ctx.request.endWithSuccess/* async call */("Verification sent"));
 				}else{
-					ctx.request.endWithError("Error while sending verification");
+/*async*/
+					(await ctx.request.endWithError/* async call */("Error while sending verification"));
 				}
-			});
-	}
-}
+			});}
 
-/*i async*/UserManager.Module.prototype.sendVerificationEmail = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 1 && ((arguments[0] instanceof UserManager.User) || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
-		var user = arguments[0];
+/*i async*/UserManager.Module.prototype.sendVerificationEmail = async function (user) {var _c_this = this; var _c_root_method_arguments = arguments;
 /*async*/
 		var mp = {};
 		mp["id"] = user.id;
 		console.log("Sending email to " + user.email);
 		(await _c_this.server.confirmation.confirm("emailVerification").via("email").using("link").to(user.email).store(mp).subject("Email verification").message("Click here to finalize your account verification.").dispatch/* async call */());
-		return true;
-	}
-}
+		return true;}
 
-/*i async*/UserManager.Module.prototype.logLogin = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 5 && (typeof arguments[0] == 'string' || typeof arguments[0] == 'undefined' || arguments[0] === null) && (typeof arguments[1] == 'string' || typeof arguments[1] == 'undefined' || arguments[1] === null) && ((arguments[2] instanceof UserManager.User) || typeof arguments[2] == 'undefined' || arguments[2] === null) && (typeof arguments[3] == 'boolean' || typeof arguments[3] == 'undefined' || arguments[3] === null) && (typeof arguments[4] == 'boolean' || typeof arguments[4] == 'undefined' || arguments[4] === null)) {
-		var ip = arguments[0];
-		var location = arguments[1];
-		var user = arguments[2];
-		var success = arguments[3];
-		var flagged = arguments[4];
+/*i async*/UserManager.Module.prototype.logLogin = async function (ip, location, user, success, flagged) {var _c_this = this; var _c_root_method_arguments = arguments;
 /*async*/
-		(await _c_this.logins.insert().set("created", Websom.Time.now()).set("ip", ip).set("location", location).set("user", user.id).set("success", success).set("flagged", flagged).run/* async call */());
-	}
-}
+		(await _c_this.logins.insert().set("created", Websom.Time.now()).set("ip", ip).set("location", location).set("user", user.id).set("success", success).set("flagged", flagged).run/* async call */());}
 
-UserManager.Module.prototype.clientData = function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 2 && ((arguments[0] instanceof Websom.Request) || typeof arguments[0] == 'undefined' || arguments[0] === null) && (typeof arguments[1] == 'function' || typeof arguments[1] == 'undefined' || arguments[1] === null)) {
-		var req = arguments[0];
-		var send = arguments[1];
-		return false;
-	}
-}
+/*i async*/UserManager.Module.prototype.loginWithConnection = async function (req, adapter, user) {var _c_this = this; var _c_root_method_arguments = arguments;
+/*async*/
+		console.log("Login");
+		(await _c_this.logLogin/* async call */(req.client.address, "", user, true, false));
+		req.session.set("user", user.id);
+		(await req.endWithSuccess/* async call */("Login successful"));}
 
-UserManager.Module.prototype.spawn = function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 1 && (typeof arguments[0] == 'object' || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
-		var config = arguments[0];
+/*i async*/UserManager.Module.prototype.createUserWithConnection = async function (req, adapter, user) {var _c_this = this; var _c_root_method_arguments = arguments;
+/*async*/
+		var res = (await _c_this.users.insert().set("username", user.username).set("firstName", user.firstName).set("lastName", user.lastName).set("password", "").set("email", user.email).set("created", Websom.Time.now()).set("banned", false).set("verified", true).set("locked", false).set("connected", true).set("connectedAdapter", adapter).set("groups", []).run/* async call */());
+		var userEntity = new UserManager.User();
+		userEntity.id = res.id;
+		userEntity.collection = _c_this.users;
+		(await _c_this.loginWithConnection/* async call */(req, adapter, userEntity));}
+
+/*i async*/UserManager.Module.prototype.handleConnectionSignin = async function (req, adapter, data) {var _c_this = this; var _c_root_method_arguments = arguments;
+/*async*/
+		var adapterInterface = _c_this.server.adapt("connection");
+		if ((await adapterInterface.loadAsBranchAdapter/* async call */(adapter))) {
+/*async*/
+			var cAdapter = adapterInterface.adapter;
+			var user = (await cAdapter.getUser/* async call */(data));
+			if (user == null) {
+/*async*/
+				(await req.endWithError/* async call */("Authentication error"));
+				return null;
+				}
+			var userRes = (await _c_this.users.where("email", "==", user.email).get/* async call */());
+			if (userRes.documents.length == 0) {
+/*async*/
+				(await _c_this.createUserWithConnection/* async call */(req, adapter, user));
+				}else{
+/*async*/
+					var userEntity = (await _c_this.users.makeEntity/* async call */(userRes.documents[0]));
+					if (userEntity.connected) {
+/*async*/
+						if (userEntity.connectedAdapter == adapter) {
+/*async*/
+							(await _c_this.loginWithConnection/* async call */(req, adapter, userEntity));
+							}else{
+/*async*/
+								(await req.endWithError/* async call */("Please sign in through " + adapter));
+								return null;
+							}
+						}else{
+/*async*/
+							(await req.endWithError/* async call */("Please sign in using your email and password"));
+							return null;
+						}
+				}
+			}else{
+/*async*/
+				(await req.endWithError/* async call */("Unknown adapter " + adapter));
+			}}
+
+UserManager.Module.prototype.clientData = function (req, send) {var _c_this = this; var _c_root_method_arguments = arguments;
+		return false;}
+
+UserManager.Module.prototype.spawn = function (config) {var _c_this = this; var _c_root_method_arguments = arguments;
 		_c_this.baseConfig = config;
 		_c_this.name = config["name"];
-		_c_this.id = config["id"];
-	}
-}
+		_c_this.id = config["id"];}
 
 UserManager.Module.prototype.stop = function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
-
-	}
 }
 
 UserManager.Module.prototype.configure = function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
-
-	}
 }
 
 /*i async*/UserManager.Module.prototype.registerCollection = async function (collection) {var _c_this = this; var _c_root_method_arguments = arguments;
@@ -244,32 +287,19 @@ else 	if (arguments.length == 1 && (typeof arguments[0] == 'string' || typeof ar
 }
 
 UserManager.Module.prototype.setupData = function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
-
-	}
 }
 
 UserManager.Module.prototype.setupBridge = function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
-
-	}
 }
 
-UserManager.Module.prototype.pullFromGlobalScope = function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 1 && (typeof arguments[0] == 'string' || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
-		var name = arguments[0];
+UserManager.Module.prototype.pullFromGlobalScope = function (name) {var _c_this = this; var _c_root_method_arguments = arguments;
 		
 			return global[name];
-		
-	}
-}
+		}
 
 UserManager.Module.prototype.setupBridges = function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
 		var bridges = [];
-		return bridges;
-	}
-}
+		return bridges;}
 
 //Relative Carbon
 //Relative Context
@@ -306,6 +336,8 @@ UserManager.Module.prototype.setupBridges = function () {var _c_this = this; var
 //Relative string
 //Relative Math
 UserManager.Login = function () {var _c_this = this;
+	this.rawFields = null;
+
 	this.collection = null;
 
 	this.id = "";
@@ -322,23 +354,15 @@ UserManager.Login = function () {var _c_this = this;
 
 	this.flagged = false;
 
-	if (arguments.length == 0) {
-
-	}
 
 }
 
 /*i async*/UserManager.Login.prototype.load = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
 /*async*/
 		var doc = (await _c_this.collection.document/* async call */(_c_this.id));
-		(await _c_this.loadFromMap/* async call */(doc.data()));
-	}
-}
+		(await _c_this.loadFromMap/* async call */(doc.data()));}
 
-/*i async*/UserManager.Login.prototype.loadEntityArray = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 1 && (arguments[0] instanceof Array || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
-		var arr = arguments[0];
+/*i async*/UserManager.Login.prototype.loadEntityArray = async function (arr) {var _c_this = this; var _c_root_method_arguments = arguments;
 /*async*/
 		if (arr.length > 0) {
 /*async*/
@@ -356,9 +380,7 @@ UserManager.Login = function () {var _c_this = this;
 					});
 				(await entity.loadFromMap/* async call */(doc.data()));
 				}
-			}
-	}
-}
+			}}
 
 UserManager.Login.applySchema = function (collection) {var _c_this = this; var _c_root_method_arguments = arguments;
 		_c_this.linkToCollection(collection);
@@ -373,9 +395,57 @@ UserManager.Login.linkToCollection = function (collection) {var _c_this = this; 
 		
 		}
 
-/*i async*/UserManager.Login.prototype.loadFromMap = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 1 && (typeof arguments[0] == 'object' || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
-		var data = arguments[0];
+UserManager.Login.prototype.getFieldValue = function (field) {var _c_this = this; var _c_root_method_arguments = arguments;
+		
+			return this[field];
+		
+		}
+
+UserManager.Login.prototype.getFieldsChanged = function () {var _c_this = this; var _c_root_method_arguments = arguments;
+		var fieldsChanged = [];
+		for (var i = 0; i < _c_this.collection.appliedSchema.fields.length; i++) {
+			var field = _c_this.collection.appliedSchema.fields[i];
+			var realValue = null;
+			var myValue = _c_this.getFieldValue(field.name);
+			var rawValue = _c_this.rawFields[field.name];
+			var isDifferent = false;
+			if (field.type == "time") {
+				var cast = myValue;
+				realValue = cast.timestamp;
+				isDifferent = realValue != rawValue;
+				}else if (field.type == "reference") {
+				var cast = myValue;
+				if (cast != null) {
+					realValue = cast.id;
+					}
+				isDifferent = realValue != rawValue;
+				}else if (field.type == "array") {
+				
+					isDifferent = JSON.stringify(myValue) != JSON.stringify(rawValue);
+				
+				
+				}else{
+					realValue = myValue;
+					isDifferent = realValue != rawValue;
+				}
+			if (isDifferent) {
+				fieldsChanged.push(field);
+				}
+			}
+		return fieldsChanged;}
+
+/*i async*/UserManager.Login.prototype.saveToCollection = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
+/*async*/
+		var fields = _c_this.getFieldsChanged();
+		var update = _c_this.collection.update().where("id", "==", _c_this.id);
+		for (var i = 0; i < fields.length; i++) {
+			var field = fields[i];
+			update.set(field.name, _c_this.getFieldValue(field.name));
+			}
+		return (await update.run/* async call */());}
+
+/*i async*/UserManager.Login.prototype.loadFromMap = async function (data) {var _c_this = this; var _c_root_method_arguments = arguments;
+		_c_this.rawFields = data;
 		
 			for (let k in data) {
 				if (data.hasOwnProperty(k) && this.hasOwnProperty(k)) {
@@ -389,14 +459,18 @@ UserManager.Login.linkToCollection = function (collection) {var _c_this = this; 
 				}
 			}
 		
-		
-	}
-}
+		}
+
+UserManager.Login.prototype.loadCreated = function (value) {var _c_this = this; var _c_root_method_arguments = arguments;
+		_c_this.created = new Websom.Time();
+		_c_this.created.timestamp = value;}
 
 UserManager.Login.getSchema = function (collection) {var _c_this = this; var _c_root_method_arguments = arguments;
-		return collection.schema().field("user", "string").field("created", "string").field("ip", "string").field("location", "string").field("success", "string").field("flagged", "string");}
+		return collection.schema().field("user", "reference").field("created", "time").field("ip", "string").field("location", "string").field("success", "boolean").field("flagged", "boolean");}
 
 UserManager.User = function () {var _c_this = this;
+	this.rawFields = null;
+
 	this.collection = null;
 
 	this.id = "";
@@ -425,6 +499,12 @@ UserManager.User = function () {var _c_this = this;
 
 	this.postCode = "";
 
+	this.bio = "";
+
+	this.nickname = "";
+
+	this.social = [];
+
 	this.role = "";
 
 	this.created = null;
@@ -439,6 +519,8 @@ UserManager.User = function () {var _c_this = this;
 
 	this.connected = false;
 
+	this.connectedAdapter = "";
+
 	this.locked = false;
 
 	this.groups = [];
@@ -446,6 +528,8 @@ UserManager.User = function () {var _c_this = this;
 	this.loginAttempts = null;
 
 	this.connections = null;
+
+	this.rawFields = null;
 
 	this.collection = null;
 
@@ -461,16 +545,11 @@ else 	if (arguments.length == 0) {
 }
 
 /*i async*/UserManager.User.prototype.load = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 0) {
 /*async*/
 		var doc = (await _c_this.collection.document/* async call */(_c_this.id));
-		(await _c_this.loadFromMap/* async call */(doc.data()));
-	}
-}
+		(await _c_this.loadFromMap/* async call */(doc.data()));}
 
-/*i async*/UserManager.User.prototype.loadEntityArray = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 1 && (arguments[0] instanceof Array || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
-		var arr = arguments[0];
+/*i async*/UserManager.User.prototype.loadEntityArray = async function (arr) {var _c_this = this; var _c_root_method_arguments = arguments;
 /*async*/
 		if (arr.length > 0) {
 /*async*/
@@ -488,9 +567,7 @@ else 	if (arguments.length == 0) {
 					});
 				(await entity.loadFromMap/* async call */(doc.data()));
 				}
-			}
-	}
-}
+			}}
 
 UserManager.User.applySchema = function (collection) {var _c_this = this; var _c_root_method_arguments = arguments;
 		_c_this.linkToCollection(collection);
@@ -505,9 +582,117 @@ UserManager.User.linkToCollection = function (collection) {var _c_this = this; v
 		
 		}
 
-/*i async*/UserManager.User.prototype.loadFromMap = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
-	if (arguments.length == 1 && (typeof arguments[0] == 'object' || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
-		var data = arguments[0];
+UserManager.User.prototype.getFieldValue = function () {var _c_this = this; var _c_root_method_arguments = arguments;
+	if (arguments.length == 1 && (typeof arguments[0] == 'string' || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
+		var field = arguments[0];
+		
+			return this[field];
+		
+		
+	}
+else 	if (arguments.length == 1 && (typeof arguments[0] == 'string' || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
+		var field = arguments[0];
+		
+			return this[field];
+		
+		
+	}
+}
+
+UserManager.User.prototype.getFieldsChanged = function () {var _c_this = this; var _c_root_method_arguments = arguments;
+	if (arguments.length == 0) {
+		var fieldsChanged = [];
+		for (var i = 0; i < _c_this.collection.appliedSchema.fields.length; i++) {
+			var field = _c_this.collection.appliedSchema.fields[i];
+			var realValue = null;
+			var myValue = _c_this.getFieldValue(field.name);
+			var rawValue = _c_this.rawFields[field.name];
+			var isDifferent = false;
+			if (field.type == "time") {
+				var cast = myValue;
+				realValue = cast.timestamp;
+				isDifferent = realValue != rawValue;
+				}else if (field.type == "reference") {
+				var cast = myValue;
+				if (cast != null) {
+					realValue = cast.id;
+					}
+				isDifferent = realValue != rawValue;
+				}else if (field.type == "array") {
+				
+					isDifferent = JSON.stringify(myValue) != JSON.stringify(rawValue);
+				
+				
+				}else{
+					realValue = myValue;
+					isDifferent = realValue != rawValue;
+				}
+			if (isDifferent) {
+				fieldsChanged.push(field);
+				}
+			}
+		return fieldsChanged;
+	}
+else 	if (arguments.length == 0) {
+		var fieldsChanged = [];
+		for (var i = 0; i < _c_this.collection.appliedSchema.fields.length; i++) {
+			var field = _c_this.collection.appliedSchema.fields[i];
+			var realValue = null;
+			var myValue = _c_this.getFieldValue(field.name);
+			var rawValue = _c_this.rawFields[field.name];
+			var isDifferent = false;
+			if (field.type == "time") {
+				var cast = myValue;
+				realValue = cast.timestamp;
+				isDifferent = realValue != rawValue;
+				}else if (field.type == "reference") {
+				var cast = myValue;
+				if (cast != null) {
+					realValue = cast.id;
+					}
+				isDifferent = realValue != rawValue;
+				}else if (field.type == "array") {
+				
+					isDifferent = JSON.stringify(myValue) != JSON.stringify(rawValue);
+				
+				
+				}else{
+					realValue = myValue;
+					isDifferent = realValue != rawValue;
+				}
+			if (isDifferent) {
+				fieldsChanged.push(field);
+				}
+			}
+		return fieldsChanged;
+	}
+}
+
+/*i async*/UserManager.User.prototype.saveToCollection = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
+	if (arguments.length == 0) {
+/*async*/
+		var fields = _c_this.getFieldsChanged();
+		var update = _c_this.collection.update().where("id", "==", _c_this.id);
+		for (var i = 0; i < fields.length; i++) {
+			var field = fields[i];
+			update.set(field.name, _c_this.getFieldValue(field.name));
+			}
+		return (await update.run/* async call */());
+	}
+else 	if (arguments.length == 0) {
+/*async*/
+		var fields = _c_this.getFieldsChanged();
+		var update = _c_this.collection.update().where("id", "==", _c_this.id);
+		for (var i = 0; i < fields.length; i++) {
+			var field = fields[i];
+			update.set(field.name, _c_this.getFieldValue(field.name));
+			}
+		return (await update.run/* async call */());
+	}
+}
+
+/*i async*/UserManager.User.prototype.loadFromMap = async function (data) {var _c_this = this; var _c_root_method_arguments = arguments;
+		_c_this.rawFields = data;
 		
 			for (let k in data) {
 				if (data.hasOwnProperty(k) && this.hasOwnProperty(k)) {
@@ -521,12 +706,62 @@ UserManager.User.linkToCollection = function (collection) {var _c_this = this; v
 				}
 			}
 		
-		
-	}
-}
+		}
+
+UserManager.User.prototype.loadCreated = function (value) {var _c_this = this; var _c_root_method_arguments = arguments;
+		_c_this.created = new Websom.Time();
+		_c_this.created.timestamp = value;}
+
+UserManager.User.prototype.loadLastLogin = function (value) {var _c_this = this; var _c_root_method_arguments = arguments;
+		_c_this.lastLogin = new Websom.Time();
+		_c_this.lastLogin.timestamp = value;}
+
+UserManager.User.prototype.loadLastBan = function (value) {var _c_this = this; var _c_root_method_arguments = arguments;
+		_c_this.lastBan = new Websom.Time();
+		_c_this.lastBan.timestamp = value;}
 
 UserManager.User.getSchema = function (collection) {var _c_this = this; var _c_root_method_arguments = arguments;
-		return collection.schema().field("username", "string").field("email", "string").field("password", "string").field("firstName", "string").field("lastName", "string").field("department", "string").field("company", "string").field("address", "string").field("city", "string").field("state", "string").field("country", "string").field("postCode", "string").field("role", "string").field("created", "string").field("lastLogin", "string").field("lastBan", "string").field("banned", "string").field("verified", "string").field("connected", "string").field("locked", "string").field("groups", "string");}
+		return collection.schema().field("username", "string").field("email", "string").field("password", "string").field("firstName", "string").field("lastName", "string").field("department", "string").field("company", "string").field("address", "string").field("city", "string").field("state", "string").field("country", "string").field("postCode", "string").field("bio", "string").field("nickname", "string").field("social", "array").field("role", "string").field("created", "time").field("lastLogin", "time").field("lastBan", "time").field("banned", "boolean").field("verified", "boolean").field("connected", "boolean").field("connectedAdapter", "string").field("locked", "boolean").field("groups", "array");}
+
+UserManager.GoogleConnection = function (server) {var _c_this = this;
+	this.server = null;
+
+		_c_this.server = server;
+}
+
+/*i async*/UserManager.GoogleConnection.prototype.getUser = async function (data) {var _c_this = this; var _c_root_method_arguments = arguments;
+		var idToken = data["id_token"];
+		var realData = {};
+		var clientID = _c_this.server.getConfigString("adapter.connection.google", "clientID");
+		
+			const { OAuth2Client } = require("google-auth-library");
+
+			const client = new OAuth2Client(clientID);
+
+			try {
+				let ticket = await client.verifyIdToken({
+					idToken,
+					audience: clientID
+				});
+
+				realData = ticket.getPayload();
+			} catch(e) {
+				return;
+			}
+		
+		
+		var firstName = realData["given_name"];
+		var lastName = realData["family_name"];
+		var email = realData["email"];
+		var t = Websom.Time.now().toString();
+		var username = firstName + "_" + lastName + "_" + t.substr(5,t.length);
+		return new Websom.Adapters.UserSystem.ConnectionUser(firstName, lastName, username, email);}
+
+/*i async*/UserManager.GoogleConnection.prototype.initialize = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
+}
+
+/*i async*/UserManager.GoogleConnection.prototype.shutdown = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
+}
 
 
 module.exports = UserManager.Module;

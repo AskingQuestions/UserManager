@@ -1,4 +1,5 @@
 #include "src/server/entities"
+#include "src/server/adapters"
 
 namespace UserManager {}
 
@@ -11,12 +12,17 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 
 	override Websom.Status start() {
 		this.server.confirmation.handleConfirmation("emailVerification", void (Websom.Adapters.Confirmation.Execution exec) => {
-			Console.log(exec.key);
+			let string id = exec.storage["id"];
+			let UserManager.User user = this.users.getEntity(id);
+
+			user.verified = true;
+
+			user.saveToCollection();
 		});
 	}
 
 	override void registerWithServer() {
-		this.server.userSystem =this;
+		this.server.userSystem = this;
 	}
 
 	override void permissions() {
@@ -76,6 +82,7 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 			.route("/search")
 				.auth(this.loginView)
 					.executes("select")
+						.read("id")
 						.read("user")
 						.read("created")
 						.read("id")
@@ -112,13 +119,57 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 					.set("verified", false)
 					.set("locked", false)
 					.set("connected", false)
-					.set("groups", new <string>array())
+					.set("connectedAdapter", "")
+					.set("groups", new <string>array())			
 			.route("/get")
 				.auth(this.userGet)
 				.executes("select")
 					.read("username")
 					.read("created")
-					.filter("default");
+					.read("id")
+					.read("bio")
+					.read("social")
+					.read("nickname")
+					.filter("default")
+						.field("id", "==")
+			.route("user-info")
+				.auth(this.userGet)
+				.executes("select")
+					.read("id")
+					.read("username")
+					.read("created")
+					.read("email")
+					.read("firstName")
+					.read("lastName")
+					.filter("default", void (Websom.Request req, Websom.Adapters.Database.SelectQuery query) => {
+						let userId = req.session.get("user");
+
+						if (userId == null) {
+							req.endWithError("Not logged in");
+							return null;
+						}
+
+						query.where("id", "==", userId);
+					});
+
+		this.server.api.route("/users/connection-sign-in")
+			.auth(this.userCreate)
+				.input("adapter")
+					.type("string")
+				.input("data")
+					.type("map")
+			.executes(void (Websom.APIContext ctx) => {
+				let adapter = ctx.get("adapter");
+				let map data = ctx.get("data");
+
+				this.handleConnectionSignin(ctx.request, adapter, data);
+			});
+
+		this.server.api.route("/logout")
+			.executes(void (Websom.APIContext ctx) => {
+				ctx.request.session.delete("user");
+				ctx.request.endWithSuccess("Signed out");
+			});
 
 		this.server.api.route("/login")
 			.input("login")
@@ -154,6 +205,12 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 					let mp = new map();
 					mp["id"] = user.id;
 					ctx.request.endWithComponent("user-unverified-status", mp);
+
+					return null;
+				}
+
+				if (user.connected) {
+					ctx.request.endWithError("Please login using " + user.connectedAdapter);
 
 					return null;
 				}
@@ -215,5 +272,72 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 			.set("success", success)
 			.set("flagged", flagged)
 			.run();
+	}
+
+	void loginWithConnection(Websom.Request req, string adapter, UserManager.User user) {
+		Console.log("Login");
+		this.logLogin(req.client.address, "", user, true, false);
+		req.session.set("user", user.id);
+		req.endWithSuccess("Login successful");
+	}
+
+	void createUserWithConnection(Websom.Request req, string adapter, Websom.Adapters.UserSystem.ConnectionUser user) {
+		let res = this.users.insert()
+			.set("username", user.username)
+			.set("firstName", user.firstName)
+			.set("lastName", user.lastName)
+			.set("password", "")
+			.set("email", user.email)
+			.set("created", Websom.Time.now())
+			.set("banned", false)
+			.set("verified", true)
+			.set("locked", false)
+			.set("connected", true)
+			.set("connectedAdapter", adapter)
+			.set("groups", new <string>array())
+			.run();
+		
+		let userEntity = new UserManager.User();
+		userEntity.id = res.id;
+		userEntity.collection = this.users;
+
+		this.loginWithConnection(req, adapter, userEntity);
+	}
+
+	void handleConnectionSignin(Websom.Request req, string adapter, map data) {
+		let adapterInterface = this.server.adapt("connection");
+
+		if (adapterInterface.loadAsBranchAdapter(adapter)) {
+			let Websom.Adapters.UserSystem.Connection cAdapter = adapterInterface.adapter;
+
+			let user = cAdapter.getUser(data);
+
+			if (user == null) {
+				req.endWithError("Authentication error");
+				return null;
+			}
+
+			let userRes = this.users.where("email", "==", user.email).get();
+
+			if (userRes.documents.length == 0) {
+				this.createUserWithConnection(req, adapter, user);
+			}else{
+				let UserManager.User userEntity = this.users.makeEntity(userRes.documents[0]);
+
+				if (userEntity.connected) {
+					if (userEntity.connectedAdapter == adapter) {
+						this.loginWithConnection(req, adapter, userEntity);
+					}else{
+						req.endWithError("Please sign in through " + adapter);
+						return null;
+					}
+				}else{
+					req.endWithError("Please sign in using your email and password");
+					return null;
+				}
+			}
+		}else{
+			req.endWithError("Unknown adapter " + adapter);
+		}
 	}
 }

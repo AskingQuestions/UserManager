@@ -74,7 +74,10 @@ $this->server = $server;
 $this->registerWithServer();
 }
 function start() {
-$this->server->confirmation->handleConfirmation("emailVerification", function ($exec)  {;});}
+$this->server->confirmation->handleConfirmation("emailVerification", function ($exec)  {$id = $exec->storage["id"];
+$user = $this->users->getEntity($id);
+$user->verified = true;
+$user->saveToCollection();});}
 
 function registerWithServer() {
 $this->server->userSystem = $this;}
@@ -108,8 +111,17 @@ $this->registerCollection($this->users);
 $this->logins = $db->collection("logins");
 UserManager_Login::applySchema($this->logins)->index()->field("user", "==")->field("created", "dsc");
 $this->registerCollection($this->logins);
-$this->server->api->_c__interface($this->logins, "/logins")->route("/search")->auth($this->loginView)->executes("select")->read("user")->read("created")->read("id")->read("flagged")->read("success")->read("location")->read("ip")->filter("default")->filter("user")->field("user", "==");
-$this->server->api->_c__interface($this->users, "/users")->route("/create")->auth($this->userCreate)->executes("insert")->write("username")->format("single-line")->regexTest("^([A-Za-z0-9_-]*)\$")->limit(3, 256)->unique()->write("password")->regexTest("^[ -~]*\$")->limit(8, 256)->mutate(function ($collection, $req, $value) use (&$db) {return $this->server->crypto->hashPassword($value);})->write("email")->format("email")->unique()->setComputed("created", function ($req) use (&$db) {return Websom_Time::now();})->set("banned", false)->set("verified", false)->set("locked", false)->set("connected", false)->set("groups", [])->route("/get")->auth($this->userGet)->executes("select")->read("username")->read("created")->filter("default");
+$this->server->api->_c__interface($this->logins, "/logins")->route("/search")->auth($this->loginView)->executes("select")->read("id")->read("user")->read("created")->read("id")->read("flagged")->read("success")->read("location")->read("ip")->filter("default")->filter("user")->field("user", "==");
+$this->server->api->_c__interface($this->users, "/users")->route("/create")->auth($this->userCreate)->executes("insert")->write("username")->format("single-line")->regexTest("^([A-Za-z0-9_-]*)\$")->limit(3, 256)->unique()->write("password")->regexTest("^[ -~]*\$")->limit(8, 256)->mutate(function ($collection, $req, $value) use (&$db) {return $this->server->crypto->hashPassword($value);})->write("email")->format("email")->unique()->setComputed("created", function ($req) use (&$db) {return Websom_Time::now();})->set("banned", false)->set("verified", false)->set("locked", false)->set("connected", false)->set("connectedAdapter", "")->set("groups", [])->route("/get")->auth($this->userGet)->executes("select")->read("username")->read("created")->read("id")->read("bio")->read("social")->read("nickname")->filter("default")->field("id", "==")->route("user-info")->auth($this->userGet)->executes("select")->read("id")->read("username")->read("created")->read("email")->read("firstName")->read("lastName")->filter("default", function ($req, $query) use (&$db) {$userId = $req->session->get("user");
+if ($userId == null) {
+$req->endWithError("Not logged in");
+return null;}
+$query->where("id", "==", $userId);});
+$this->server->api->route("/users/connection-sign-in")->auth($this->userCreate)->input("adapter")->type("string")->input("data")->type("map")->executes(function ($ctx) use (&$db) {$adapter = $ctx->get("adapter");
+$data = &$ctx->get("data");
+$this->handleConnectionSignin($ctx->request, $adapter, $data);});
+$this->server->api->route("/logout")->executes(function ($ctx) use (&$db) {$ctx->request->session->delete("user");
+$ctx->request->endWithSuccess("Signed out");});
 $this->server->api->route("/login")->input("login")->type("string")->limit(3, 256)->input("password")->type("string")->limit(8, 256)->executes(function ($ctx) use (&$db) {$login = $ctx->get("login");
 $password = $ctx->get("password");
 $emailValidator = new Websom_Restrictions_Format("email");
@@ -126,6 +138,9 @@ if ($user->verified == false) {
 $mp = new _carb_map();
 $mp["id"] = $user->id;
 $ctx->request->endWithComponent("user-unverified-status", $mp);
+return null;}
+if ($user->connected) {
+$ctx->request->endWithError("Please login using " . $user->connectedAdapter);
 return null;}
 if ($passedPassword) {
 $this->logLogin($ctx->request->client->address, "", $user, true, false);
@@ -150,6 +165,40 @@ return true;}
 
 function logLogin($ip, $location, $user, $success, $flagged) {
 $this->logins->insert()->set("created", Websom_Time::now())->set("ip", $ip)->set("location", $location)->set("user", $user->id)->set("success", $success)->set("flagged", $flagged)->run();}
+
+function loginWithConnection($req, $adapter, $user) {
+;
+$this->logLogin($req->client->address, "", $user, true, false);
+$req->session->set("user", $user->id);
+$req->endWithSuccess("Login successful");}
+
+function createUserWithConnection($req, $adapter, $user) {
+$res = $this->users->insert()->set("username", $user->username)->set("firstName", $user->firstName)->set("lastName", $user->lastName)->set("password", "")->set("email", $user->email)->set("created", Websom_Time::now())->set("banned", false)->set("verified", true)->set("locked", false)->set("connected", true)->set("connectedAdapter", $adapter)->set("groups", [])->run();
+$userEntity = new UserManager_User();
+$userEntity->id = $res->id;
+$userEntity->collection = $this->users;
+$this->loginWithConnection($req, $adapter, $userEntity);}
+
+function handleConnectionSignin($req, $adapter, $data) {
+$adapterInterface = $this->server->adapt("connection");
+if ($adapterInterface->loadAsBranchAdapter($adapter)) {
+$cAdapter = $adapterInterface->adapter;
+$user = $cAdapter->getUser($data);
+if ($user == null) {
+$req->endWithError("Authentication error");
+return null;}
+$userRes = $this->users->where("email", "==", $user->email)->get();
+if (count($userRes->documents) == 0) {
+$this->createUserWithConnection($req, $adapter, $user);}else{
+$userEntity = $this->users->makeEntity(_c_lib__arrUtils::readIndex($userRes->documents, 0));
+if ($userEntity->connected) {
+if ($userEntity->connectedAdapter == $adapter) {
+$this->loginWithConnection($req, $adapter, $userEntity);}else{
+$req->endWithError("Please sign in through " . $adapter);
+return null;}}else{
+$req->endWithError("Please sign in using your email and password");
+return null;}}}else{
+$req->endWithError("Unknown adapter " . $adapter);}}
 
 function clientData($req, $send) {
 return false;}
@@ -232,6 +281,8 @@ return $bridges;}
 //Relative void
 //Relative string
 class UserManager_Login {
+public $rawFields;
+
 public $collection;
 
 public $id;
@@ -249,6 +300,7 @@ public $success;
 public $flagged;
 
 function __construct() {
+$this->rawFields = null;
 $this->collection = null;
 $this->id = "";
 $this->user = null;
@@ -289,7 +341,48 @@ static function linkToCollection($collection) {
 			$collection->entityTemplate = __CLASS__;
 		}
 
+function getFieldValue($field) {
+
+
+			return $this->$field;
+		}
+
+function &getFieldsChanged() {
+$fieldsChanged = [];
+for ($i = 0; $i < count($this->collection->appliedSchema->fields); $i++) {
+$field = _c_lib__arrUtils::readIndex($this->collection->appliedSchema->fields, $i);
+$realValue = null;
+$myValue = $this->getFieldValue($field->name);
+$rawValue = $this->rawFields[$field->name];
+$isDifferent = false;
+if ($field->type == "time") {
+$cast = $myValue;
+$realValue = $cast->timestamp;
+$isDifferent = $realValue != $rawValue;}else if ($field->type == "reference") {
+$cast = $myValue;
+if ($cast != null) {
+$realValue = $cast->id;}
+$isDifferent = $realValue != $rawValue;}else if ($field->type == "array") {
+
+
+					$isDifferent = count(array_diff($myValue, $rawValue)) > 0;
+				}else{
+$realValue = $myValue;
+$isDifferent = $realValue != $rawValue;}
+if ($isDifferent) {
+array_push($fieldsChanged, $field);}}
+return $fieldsChanged;}
+
+function saveToCollection() {
+$fields = &$this->getFieldsChanged();
+$update = $this->collection->update()->where("id", "==", $this->id);
+for ($i = 0; $i < count($fields); $i++) {
+$field = _c_lib__arrUtils::readIndex($fields, $i);
+$update->set($field->name, $this->getFieldValue($field->name));}
+return $update->run();}
+
 function loadFromMap($data) {
+$this->rawFields = $data;
 
 
 			foreach ($data as $k => $v) {
@@ -305,11 +398,17 @@ function loadFromMap($data) {
 			}
 		}
 
+function loadCreated($value) {
+$this->created = new Websom_Time();
+$this->created->timestamp = $value;}
+
 static function getSchema($collection) {
-return $collection->schema()->field("user", "string")->field("created", "string")->field("ip", "string")->field("location", "string")->field("success", "string")->field("flagged", "string");}
+return $collection->schema()->field("user", "reference")->field("created", "time")->field("ip", "string")->field("location", "string")->field("success", "boolean")->field("flagged", "boolean");}
 
 
 }class UserManager_User {
+public $rawFields;
+
 public $collection;
 
 public $id;
@@ -338,6 +437,12 @@ public $country;
 
 public $postCode;
 
+public $bio;
+
+public $nickname;
+
+public $social;
+
 public $role;
 
 public $created;
@@ -352,6 +457,8 @@ public $verified;
 
 public $connected;
 
+public $connectedAdapter;
+
 public $locked;
 
 public $groups;
@@ -360,11 +467,14 @@ public $loginAttempts;
 
 public $connections;
 
+public $rawFields;
+
 public $collection;
 
 public $id;
 
 function __construct(...$arguments) {
+$this->rawFields = null;
 $this->collection = null;
 $this->id = "";
 $this->username = "";
@@ -379,6 +489,9 @@ $this->city = "";
 $this->state = "";
 $this->country = "";
 $this->postCode = "";
+$this->bio = "";
+$this->nickname = "";
+$this->social = [];
 $this->role = "";
 $this->created = null;
 $this->lastLogin = null;
@@ -386,10 +499,12 @@ $this->lastBan = null;
 $this->banned = false;
 $this->verified = false;
 $this->connected = false;
+$this->connectedAdapter = "";
 $this->locked = false;
 $this->groups = [];
 $this->loginAttempts = null;
 $this->connections = null;
+$this->rawFields = null;
 $this->collection = null;
 $this->id = "";
 
@@ -430,7 +545,99 @@ static function linkToCollection($collection) {
 			$collection->entityTemplate = __CLASS__;
 		}
 
+function getFieldValue(...$arguments) {
+if (count($arguments) == 1 and (gettype($arguments[0]) == 'string' or gettype($arguments[0]) == 'NULL')) {
+$field = $arguments[0];
+
+
+			return $this->$field;
+		
+}
+else if (count($arguments) == 1 and (gettype($arguments[0]) == 'string' or gettype($arguments[0]) == 'NULL')) {
+$field = $arguments[0];
+
+
+			return $this->$field;
+		
+}
+}
+
+function &getFieldsChanged(...$arguments) {
+if (count($arguments) == 0) {
+$fieldsChanged = [];
+for ($i = 0; $i < count($this->collection->appliedSchema->fields); $i++) {
+$field = _c_lib__arrUtils::readIndex($this->collection->appliedSchema->fields, $i);
+$realValue = null;
+$myValue = $this->getFieldValue($field->name);
+$rawValue = $this->rawFields[$field->name];
+$isDifferent = false;
+if ($field->type == "time") {
+$cast = $myValue;
+$realValue = $cast->timestamp;
+$isDifferent = $realValue != $rawValue;}else if ($field->type == "reference") {
+$cast = $myValue;
+if ($cast != null) {
+$realValue = $cast->id;}
+$isDifferent = $realValue != $rawValue;}else if ($field->type == "array") {
+
+
+					$isDifferent = count(array_diff($myValue, $rawValue)) > 0;
+				}else{
+$realValue = $myValue;
+$isDifferent = $realValue != $rawValue;}
+if ($isDifferent) {
+array_push($fieldsChanged, $field);}}
+return $fieldsChanged;
+}
+else if (count($arguments) == 0) {
+$fieldsChanged = [];
+for ($i = 0; $i < count($this->collection->appliedSchema->fields); $i++) {
+$field = _c_lib__arrUtils::readIndex($this->collection->appliedSchema->fields, $i);
+$realValue = null;
+$myValue = $this->getFieldValue($field->name);
+$rawValue = $this->rawFields[$field->name];
+$isDifferent = false;
+if ($field->type == "time") {
+$cast = $myValue;
+$realValue = $cast->timestamp;
+$isDifferent = $realValue != $rawValue;}else if ($field->type == "reference") {
+$cast = $myValue;
+if ($cast != null) {
+$realValue = $cast->id;}
+$isDifferent = $realValue != $rawValue;}else if ($field->type == "array") {
+
+
+					$isDifferent = count(array_diff($myValue, $rawValue)) > 0;
+				}else{
+$realValue = $myValue;
+$isDifferent = $realValue != $rawValue;}
+if ($isDifferent) {
+array_push($fieldsChanged, $field);}}
+return $fieldsChanged;
+}
+}
+
+function saveToCollection(...$arguments) {
+if (count($arguments) == 0) {
+$fields = &$this->getFieldsChanged();
+$update = $this->collection->update()->where("id", "==", $this->id);
+for ($i = 0; $i < count($fields); $i++) {
+$field = _c_lib__arrUtils::readIndex($fields, $i);
+$update->set($field->name, $this->getFieldValue($field->name));}
+return $update->run();
+}
+else if (count($arguments) == 0) {
+$fields = &$this->getFieldsChanged();
+$update = $this->collection->update()->where("id", "==", $this->id);
+for ($i = 0; $i < count($fields); $i++) {
+$field = _c_lib__arrUtils::readIndex($fields, $i);
+$update->set($field->name, $this->getFieldValue($field->name));}
+return $update->run();
+}
+}
+
 function loadFromMap($data) {
+$this->rawFields = $data;
 
 
 			foreach ($data as $k => $v) {
@@ -446,8 +653,57 @@ function loadFromMap($data) {
 			}
 		}
 
+function loadCreated($value) {
+$this->created = new Websom_Time();
+$this->created->timestamp = $value;}
+
+function loadLastLogin($value) {
+$this->lastLogin = new Websom_Time();
+$this->lastLogin->timestamp = $value;}
+
+function loadLastBan($value) {
+$this->lastBan = new Websom_Time();
+$this->lastBan->timestamp = $value;}
+
 static function getSchema($collection) {
-return $collection->schema()->field("username", "string")->field("email", "string")->field("password", "string")->field("firstName", "string")->field("lastName", "string")->field("department", "string")->field("company", "string")->field("address", "string")->field("city", "string")->field("state", "string")->field("country", "string")->field("postCode", "string")->field("role", "string")->field("created", "string")->field("lastLogin", "string")->field("lastBan", "string")->field("banned", "string")->field("verified", "string")->field("connected", "string")->field("locked", "string")->field("groups", "string");}
+return $collection->schema()->field("username", "string")->field("email", "string")->field("password", "string")->field("firstName", "string")->field("lastName", "string")->field("department", "string")->field("company", "string")->field("address", "string")->field("city", "string")->field("state", "string")->field("country", "string")->field("postCode", "string")->field("bio", "string")->field("nickname", "string")->field("social", "array")->field("role", "string")->field("created", "time")->field("lastLogin", "time")->field("lastBan", "time")->field("banned", "boolean")->field("verified", "boolean")->field("connected", "boolean")->field("connectedAdapter", "string")->field("locked", "boolean")->field("groups", "array");}
+
+
+}class UserManager_GoogleConnection {
+public $server;
+
+function __construct($server) {
+$this->server = null;
+
+$this->server = $server;
+}
+function getUser($data) {
+$idToken = $data["id_token"];
+$realData = new _carb_map();
+$clientID = $this->server->getConfigString("adapter.connection.google", "clientID");
+
+
+			$client = new Google_Client([
+				"client_id" => $clientID
+			]);
+
+			$realData = $client->verifyIdToken($id_token);
+
+			if (!$realData)
+				return;
+		
+$firstName = $realData["given_name"];
+$lastName = $realData["family_name"];
+$email = $realData["email"];
+$t = strval(Websom_Time::now());
+$username = $firstName . "_" . $lastName . "_" . substr($t, 5,strlen($t));
+return new Websom_Adapters_UserSystem_ConnectionUser($firstName, $lastName, $username, $email);}
+
+function initialize() {
+}
+
+function shutdown() {
+}
 
 
 }

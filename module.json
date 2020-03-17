@@ -6,10 +6,49 @@
 			"path": "./src/client/components"
 		},
 		{
-			"path": "./src/client/effects"
+			"path": "./src/client/state"
 		},
 		{
-			"path": "./src/client/styles"
+			"path": "./src/client/script"
 		}
-	]
+	],
+	"npm": {
+		"google-auth-library": "*"
+	},
+	"composer": {
+		"google/apiclient": "*"
+	},
+	"adapters": {
+		"google": {
+			"type": "connection",
+			"supports": {
+				"javascript": true,
+				"php": false
+			},
+			"class": "UserManager.GoogleConnection"
+		}
+	},
+	"config": {
+		"adapter.connection.google": {
+			"clientID": {
+				"name": "Client ID",
+				"type": "string",
+				"default": "",
+				"public": true
+			},
+			"clientSecret": {
+				"name": "Client Secret",
+				"type": "string",
+				"default": ""
+			}
+		},
+		"module.userSystem": {
+			"signInConnections": {
+				"name": "Sign In Connections",
+				"type": "array",
+				"default": [],
+				"public": true
+			}
+		}
+	}
 }
