@@ -1,0 +1,10 @@
+info {
+	"type": "script",
+	"name": "login"
+}
+
+script {
+	export default (ctx) => {
+		ctx.store.dispatch("login");
+	};
+}
