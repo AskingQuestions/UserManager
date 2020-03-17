@@ -1,0 +1,54 @@
+info {
+	"name": "google-signin",
+	"type": "component",
+	"adapt": "google.signIn"
+}
+
+template {
+	<div class="google-signin">
+		<loader :active="!gapiLoaded">
+			<div style="min-height: 54px;" id="google-sign-in" class="center-content"></div>
+		</loader>
+	</div>
+}
+
+script {
+	export default {
+		data: () => ({
+			gapiLoaded: false
+		}),
+		methods: {
+			signIn(googleUser) {
+				let profile = googleUser.getBasicProfile();
+				let authData = googleUser.getAuthResponse(true);
+
+				this.$emit("sign-in", {
+					name: profile.getName(),
+					email: profile.getEmail(),
+					image: profile.getImageUrl(),
+					access_token: authData.access_token,
+					id_token: authData.id_token
+				});
+			}
+		},
+		mounted() {
+			this.websom.loadScript("https://apis.google.com/js/platform.js", () => {
+				let clientID = this.websom.getConfig("adapter.connection.google", "clientID");
+				gapi.load("auth2", async () => {
+					await gapi.auth2.init({client_id: clientID});
+					this.gapiLoaded = true;
+
+					let gAuth = gapi.auth2.getAuthInstance();
+					
+					if (gAuth.isSignedIn.get())
+						gAuth.signOut();
+					
+					gapi.signin2.render("google-sign-in", {
+						theme: this.$store.state.websom.colorScheme,
+						onsuccess: (googleUser) => this.signIn(googleUser)
+					});
+				})
+			});
+		}
+	}
+}
