@@ -7,9 +7,13 @@ template {
 	<div class="nav-item">
 		<icon icon="user" />
 
-		<dropdown>
+		<dropdown v-if="user === null">
 			<button @click="open('login')">Login</button>
 			<button @click="open('signup')">Sign Up</button>
+		</dropdown>
+		<dropdown v-else>
+			<button @click="profile()">{{user.firstName}} {{user.lastName}}</button>
+			<button @click="logout()">Logout</button>
 		</dropdown>
 
 		<user-modal ref="modal" :mode="mode"/>
@@ -21,10 +25,18 @@ script {
 		data: () => ({
 			mode: "login"
 		}),
+		computed: {
+			user() {
+				return this.$store.state.userSystem.user;
+			}
+		},
 		methods: {
 			open(mode) {
 				this.mode = mode;
 				this.$refs.modal.open();
+			},
+			async logout() {
+				this.$store.dispatch("logout");
 			}
 		}
 	}
