@@ -1,0 +1,45 @@
+class UserManager.GoogleConnection inherits Websom.Adapters.UserSystem.Connection {
+	override Websom.Adapters.UserSystem.ConnectionUser getUser(map data) {
+		let string idToken = data["id_token"];
+		let realData = new map();
+
+		let clientID = this.server.getConfigString("adapter.connection.google", "clientID");
+
+		native javascript {
+			const { OAuth2Client } = require("google-auth-library");
+
+			const client = new OAuth2Client(clientID);
+
+			try {
+				let ticket = await client.verifyIdToken({
+					idToken,
+					audience: clientID
+				});
+
+				realData = ticket.getPayload();
+			} catch(e) {
+				return;
+			}
+		}
+
+		native php {
+			$client = new Google_Client([
+				"client_id" => $clientID
+			]);
+
+			$realData = $client->verifyIdToken($id_token);
+
+			if (!$realData)
+				return;
+		}
+
+		let firstName = realData["given_name"];
+		let lastName = realData["family_name"];
+		let email = realData["email"];
+
+		let string t = Websom.Time.now().toString();
+		let username = firstName + "_" + lastName + "_" + t.substr(5, t.length);
+
+		return new Websom.Adapters.UserSystem.ConnectionUser(firstName, lastName, username, email);
+	}
+}
