@@ -9,40 +9,56 @@ template {
 			<card>
 				<div slot="body" class="login-container" :class="'login-container-' + (overrideMode || mode)">
 					<div class="login-container-logo">
-						<img :src="logo" />
+						<img :class="{'square-framed': profileImage}" :src="logo" />
 						<h1>{{overrideMode || mode}}</h1>
 					</div>
-					<div class="login-slide">
-						<transition name="slide">
-							<div class="user-login" v-if="(overrideMode || mode) == 'login'" key="login">
-								<api-form route="/login" ref="loginForm">
-									<input-text name="username" placeholder="Username" icon="user" v-model="login.username" />
-									<input-text name="password" type="password" placeholder="Password" icon="key" v-model="login.password" />
+					<div class="login-main">
+						<div class="login-slide">
+							<transition name="slide">
+								<div class="user-login" v-if="(overrideMode || mode) == 'login'" key="login">
+									<api-form route="/login" ref="loginForm">
+										<input-text name="username" placeholder="Username" icon="user" v-model="login.username" />
+										<input-text name="password" type="password" placeholder="Password" icon="key" v-model="login.password" />
 
-									<button class="full user-login-button" @click="submitLogin()">Login</button>
-								</api-form>
+										<button class="full user-login-button" @click="submitLogin()">Login</button>
+									</api-form>
 
-								<div class="mini-options">
-									<a>Forgot your password?</a>
-									<a @click="setMode('signup')">Don't have an account?</a>
+									<div class="mini-options">
+										<a>Forgot your password?</a>
+										<a @click="setMode('signup')">Don't have an account?</a>
+									</div>
+
+									<h3 v-if="signIns.length > 0" class="center-content">OR</h3>
+
+									<div v-for="signIn in signIns" :key="signIn.name">
+										<component @sign-in="signinWithConnection(signIn.name, $event)" :is="signIn.component" />
+									</div>
 								</div>
-							</div>
-							<div class="user-signup" v-if="(overrideMode || mode) == 'signup'" key="signup">
-								<api-form route="/users/create" ref="signupForm">
-									<input-text name="username" placeholder="Username" icon="user" v-model="signup.username" validate="/users/create.username" />
-									<input-text name="email" placeholder="Email" icon="email" v-model="signup.email" validate="/users/create.email" />
-									<input-text name="password" type="password" placeholder="Password" icon="key" v-model="signup.password" validate="/users/create.password" />
-									<input-text name="password" type="password" placeholder="Retype Password" icon="check" v-model="signup.passwordVerify" :validate="matchPasswords" />
+								<div class="user-signup" v-if="(overrideMode || mode) == 'signup'" key="signup">
+									<loader :active="connectionSignupLoading">
+										<api-form route="/users/create" ref="signupForm">
+											<input-text name="username" placeholder="Username" icon="user" v-model="signup.username" validate="/users/create.username" />
+											<input-text name="email" placeholder="Email" icon="email" v-model="signup.email" validate="/users/create.email" />
+											<input-text name="password" type="password" placeholder="Password" icon="key" v-model="signup.password" validate="/users/create.password" />
+											<input-text name="password" type="password" placeholder="Retype Password" icon="check" v-model="signup.passwordVerify" :validate="matchPasswords" />
 
-									<button class="full user-login-button" @click="submitSignup()">Sign Up</button>
-								</api-form>
+											<button class="full user-login-button" @click="submitSignup()">Sign Up</button>
+										</api-form>
 
-								<div class="mini-options">
-									<a>Need help?</a>
-									<a @click="setMode('login')">Already have an account?</a>
+										<div class="mini-options">
+											<a>Need help?</a>
+											<a @click="setMode('login')">Already have an account?</a>
+										</div>
+
+										<h3 v-if="signIns.length > 0" class="center-content">OR</h3>
+
+										<div v-for="signIn in signIns" :key="signIn.name">
+											<component @sign-in="signupWithConnection(signIn.name, $event)" :is="signIn.component" />
+										</div>
+									</loader>
 								</div>
-							</div>
-						</transition>
+							</transition>
+						</div>
 					</div>
 
 					<button class="user-cancel full mute" @click="cancel()">Cancel</button>
@@ -61,6 +77,7 @@ script {
 			}
 		},
 		data: () => ({
+			profileImage: null,
 			overrideMode: null,
 			login: {
 				username: "",
@@ -71,9 +88,42 @@ script {
 				username: "",
 				password: "",
 				passwordVerify: ""
-			}
+			},
+			connectionSignupLoading: false
 		}),
 		methods: {
+			async signupWithConnection(adapter, data) {
+				this.profileImage = data.image;
+				this.connectionSignupLoading = true;
+
+				let res = await this.websom.fetch("/users/connection-sign-in", {
+					adapter: adapter,
+					data: data
+				});
+
+				this.connectionSignupLoading = false;
+
+				this.$refs.signupForm.setStatus(res);
+
+				if (res.status == "success")
+					this.loginSuccess();
+			},
+			async signinWithConnection(adapter, data) {
+				this.profileImage = data.image;
+				this.connectionSignupLoading = true;
+
+				let res = await this.websom.fetch("/users/connection-sign-in", {
+					adapter: adapter,
+					data: data
+				});
+
+				this.connectionSignupLoading = false;
+
+				this.$refs.loginForm.setStatus(res);
+
+				if (res.status == "success")
+					this.loginSuccess();
+			},
 			open() {
 				this.$refs.modal.open();
 			},
@@ -84,14 +134,21 @@ script {
 				this.$refs.modal.close();
 			},
 			setMode(mode) {
+				this.profileImage = null;
 				this.overrideMode = mode;
 			},
-			submitLogin() {
-				console.log("Submit login");
-				this.$refs.loginForm.submit({
+			loginSuccess() {
+				if (this.$store.dispatch("login"))
+					this.$refs.modal.close();
+			},
+			async submitLogin() {
+				let res = await this.$refs.loginForm.submit({
 					login: this.login.username,
 					password: this.login.password
 				});
+
+				if (res.status == "success")
+					this.loginSuccess();
 			},
 			submitSignup() {
 				this.$refs.signupForm.submit({
@@ -110,11 +167,18 @@ script {
 		},
 		computed: {
 			logo() {
+				if (this.profileImage)
+					return this.profileImage;
+
 				if (this.$config.logo != "") {
 					return this.$config.logo;
 				}else{
 					return this.$store.state.assets.logo;
 				}
+			},
+			signIns() {
+				return this.websom.getConfig("module.userSystem", "signInConnections")
+					.map(adapter => ({name: adapter, component: this.websom.getComponentForAdapter(`${adapter}.signIn`)}));
 			}
 		}
 	}
@@ -160,15 +224,21 @@ style {
 	}
 
 	.user-cancel {
-		position: absolute;
-		bottom: 0;
+		
 	}
 
 	.user-login-button {
 		margin-top: var(--base-size);
 	}
 
+	.login-main {
+		flex: 1;
+	}
+
 	.login-slide {
+		height: 100%;
+		overflow-y: auto;
+		overflow-x: hidden;
 		position: relative;
 
 		& > * {
