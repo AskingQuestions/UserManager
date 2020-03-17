@@ -1,0 +1,29 @@
+info {
+	"type": "state",
+	"name": "user"
+}
+
+script {
+	export default websom => ({
+		actions: {
+			async logout(ctx) {
+				ctx.commit("setUser", null);
+				await websom.fetch("/logout", {});
+				console.log("Logout");
+			},
+			async login(ctx) {
+				let info = await websom.fetch("/users/login-info", {
+					query: {},
+					fields: {"*": true}
+				});
+
+				if (info.status == "success" && info.documents.length > 0) {
+					ctx.commit("setUser", websom.makeEntity("/users", info.documents[0]));
+					return true;
+				} else {
+					return false;
+				}
+			}
+		}
+	})
+}
