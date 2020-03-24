@@ -77,7 +77,17 @@ function start() {
 $this->server->confirmation->handleConfirmation("emailVerification", function ($exec)  {$id = $exec->storage["id"];
 $user = $this->users->getEntity($id);
 $user->verified = true;
-$user->saveToCollection();});}
+$user->saveToCollection();});
+$this->server->confirmation->handleConfirmation("passwordReset", function ($exec)  {$id = $exec->storage["id"];
+$user = $this->users->getEntity($id);
+if ($exec->params == null or (gettype($exec->params) == 'double' ? 'float' : (gettype($exec->params) == 'array' ? (isset($exec->params['_c__mapC']) ? 'map' : 'array') : gettype($exec->params))) != "map") {
+$exec->request->endWithError("Invalid params");
+return null;}
+$newPassword = $exec->params["password"];
+if ((gettype($newPassword) == 'double' ? 'float' : (gettype($newPassword) == 'array' ? (isset($newPassword['_c__mapC']) ? 'map' : 'array') : gettype($newPassword))) == "string" and strlen($newPassword) > 3 and strlen($newPassword) < 256) {
+$user->password = $this->server->crypto->hashPassword($newPassword);
+$user->saveToCollection();}else{
+$exec->request->endWithError("Invalid password");}});}
 
 function registerWithServer() {
 $this->server->userSystem = $this;}
@@ -154,7 +164,14 @@ $ctx->request->endWithError("Invalid id");
 return null;}
 if ($this->sendVerificationEmail($user)) {
 $ctx->request->endWithSuccess("Verification sent");}else{
-$ctx->request->endWithError("Error while sending verification");}});}
+$ctx->request->endWithError("Error while sending verification");}});
+$this->server->api->route("/reset-password")->input("email")->type("string")->format("email")->limit(1, 255)->executes(function ($ctx) use (&$db) {$email = $ctx->get("email");
+$docs = $this->users->where("email", "==", $email)->get();
+if (count($docs->documents) > 0) {
+$doc = $this->users->makeEntity(_c_lib__arrUtils::readIndex($docs->documents, 0));
+if ($this->sendPasswordReset($doc) == false) {
+$ctx->request->endWithError("Error while sending password reset.");}}
+$ctx->request->endWithSuccess("Password reset sent! Please check your inbox.");});}
 
 function sendVerificationEmail($user) {
 $mp = new _carb_map();
@@ -163,11 +180,16 @@ $mp["id"] = $user->id;
 $this->server->confirmation->confirm("emailVerification")->via("email")->using("link")->to($user->email)->store($mp)->subject("Email verification")->message("Click here to finalize your account verification.")->dispatch();
 return true;}
 
+function sendPasswordReset($user) {
+$mp = new _carb_map();
+$mp["id"] = $user->id;
+$this->server->confirmation->confirm("passwordReset")->via("email")->using("link")->to($user->email)->store($mp)->subject("Password Reset")->message("Click here to reset your password.")->dispatch();
+return true;}
+
 function logLogin($ip, $location, $user, $success, $flagged) {
 $this->logins->insert()->set("created", Websom_Time::now())->set("ip", $ip)->set("location", $location)->set("user", $user->id)->set("success", $success)->set("flagged", $flagged)->run();}
 
 function loginWithConnection($req, $adapter, $user) {
-;
 $this->logLogin($req->client->address, "", $user, true, false);
 $req->session->set("user", $user->id);
 $req->endWithSuccess("Login successful");}
@@ -357,7 +379,9 @@ $rawValue = $this->rawFields[$field->name];
 $isDifferent = false;
 if ($field->type == "time") {
 $cast = $myValue;
-$realValue = $cast->timestamp;
+if ($cast == null) {
+$realValue = null;}else{
+$realValue = $cast->timestamp;}
 $isDifferent = $realValue != $rawValue;}else if ($field->type == "reference") {
 $cast = $myValue;
 if ($cast != null) {
@@ -573,7 +597,9 @@ $rawValue = $this->rawFields[$field->name];
 $isDifferent = false;
 if ($field->type == "time") {
 $cast = $myValue;
-$realValue = $cast->timestamp;
+if ($cast == null) {
+$realValue = null;}else{
+$realValue = $cast->timestamp;}
 $isDifferent = $realValue != $rawValue;}else if ($field->type == "reference") {
 $cast = $myValue;
 if ($cast != null) {
@@ -599,7 +625,9 @@ $rawValue = $this->rawFields[$field->name];
 $isDifferent = false;
 if ($field->type == "time") {
 $cast = $myValue;
-$realValue = $cast->timestamp;
+if ($cast == null) {
+$realValue = null;}else{
+$realValue = $cast->timestamp;}
 $isDifferent = $realValue != $rawValue;}else if ($field->type == "reference") {
 $cast = $myValue;
 if ($cast != null) {

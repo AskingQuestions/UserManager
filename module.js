@@ -57,6 +57,25 @@ UserManager.Module = function (server) {var _c_this = this;
 			var user = (await _c_this.users.getEntity/* async call */(id));
 			user.verified = true;
 			(await user.saveToCollection/* async call */());
+			});
+		_c_this.server.confirmation.handleConfirmation("passwordReset", async function (exec) {
+/*async*/
+			var id = exec.storage["id"];
+			var user = (await _c_this.users.getEntity/* async call */(id));
+			if (exec.params == null || (typeof exec.params == 'object' ? (Array.isArray(exec.params) ? 'array' : 'map') : (typeof exec.params == 'number' ? 'float' : typeof exec.params)) != "map") {
+/*async*/
+				(await exec.request.endWithError/* async call */("Invalid params"));
+				return null;
+				}
+			var newPassword = exec.params["password"];
+			if ((typeof newPassword == 'object' ? (Array.isArray(newPassword) ? 'array' : 'map') : (typeof newPassword == 'number' ? 'float' : typeof newPassword)) == "string" && newPassword.length > 3 && newPassword.length < 256) {
+/*async*/
+				user.password = (await _c_this.server.crypto.hashPassword/* async call */(newPassword));
+				(await user.saveToCollection/* async call */());
+				}else{
+/*async*/
+					(await exec.request.endWithError/* async call */("Invalid password"));
+				}
 			});}
 
 UserManager.Module.prototype.registerWithServer = function () {var _c_this = this; var _c_root_method_arguments = arguments;
@@ -118,7 +137,7 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 			});
 		_c_this.server.api.route("/logout").executes(async function (ctx) {
 /*async*/
-			ctx.request.session.delete("user");
+			(await ctx.request.session.delete/* async call */("user"));
 			(await ctx.request.endWithSuccess/* async call */("Signed out"));
 			});
 		_c_this.server.api.route("/login").input("login").type("string").limit(3, 256).input("password").type("string").limit(8, 256).executes(async function (ctx) {
@@ -156,7 +175,7 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 			if (passedPassword) {
 /*async*/
 				(await _c_this.logLogin/* async call */(ctx.request.client.address, "", user, true, false));
-				ctx.request.session.set("user", user.id);
+				(await ctx.request.session.set/* async call */("user", user.id));
 				(await ctx.request.endWithSuccess/* async call */("Login successful"));
 				}else{
 /*async*/
@@ -179,6 +198,20 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 /*async*/
 					(await ctx.request.endWithError/* async call */("Error while sending verification"));
 				}
+			});
+		_c_this.server.api.route("/reset-password").input("email").type("string").format("email").limit(1, 255).executes(async function (ctx) {
+/*async*/
+			var email = ctx.get("email");
+			var docs = (await _c_this.users.where("email", "==", email).get/* async call */());
+			if (docs.documents.length > 0) {
+/*async*/
+				var doc = (await _c_this.users.makeEntity/* async call */(docs.documents[0]));
+				if ((await _c_this.sendPasswordReset/* async call */(doc)) == false) {
+/*async*/
+					(await ctx.request.endWithError/* async call */("Error while sending password reset."));
+					}
+				}
+			(await ctx.request.endWithSuccess/* async call */("Password reset sent! Please check your inbox."));
 			});}
 
 /*i async*/UserManager.Module.prototype.sendVerificationEmail = async function (user) {var _c_this = this; var _c_root_method_arguments = arguments;
@@ -189,15 +222,21 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 		(await _c_this.server.confirmation.confirm("emailVerification").via("email").using("link").to(user.email).store(mp).subject("Email verification").message("Click here to finalize your account verification.").dispatch/* async call */());
 		return true;}
 
+/*i async*/UserManager.Module.prototype.sendPasswordReset = async function (user) {var _c_this = this; var _c_root_method_arguments = arguments;
+/*async*/
+		var mp = {};
+		mp["id"] = user.id;
+		(await _c_this.server.confirmation.confirm("passwordReset").via("email").using("link").to(user.email).store(mp).subject("Password Reset").message("Click here to reset your password.").dispatch/* async call */());
+		return true;}
+
 /*i async*/UserManager.Module.prototype.logLogin = async function (ip, location, user, success, flagged) {var _c_this = this; var _c_root_method_arguments = arguments;
 /*async*/
 		(await _c_this.logins.insert().set("created", Websom.Time.now()).set("ip", ip).set("location", location).set("user", user.id).set("success", success).set("flagged", flagged).run/* async call */());}
 
 /*i async*/UserManager.Module.prototype.loginWithConnection = async function (req, adapter, user) {var _c_this = this; var _c_root_method_arguments = arguments;
 /*async*/
-		console.log("Login");
 		(await _c_this.logLogin/* async call */(req.client.address, "", user, true, false));
-		req.session.set("user", user.id);
+		(await req.session.set/* async call */("user", user.id));
 		(await req.endWithSuccess/* async call */("Login successful"));}
 
 /*i async*/UserManager.Module.prototype.createUserWithConnection = async function (req, adapter, user) {var _c_this = this; var _c_root_method_arguments = arguments;
@@ -411,7 +450,11 @@ UserManager.Login.prototype.getFieldsChanged = function () {var _c_this = this; 
 			var isDifferent = false;
 			if (field.type == "time") {
 				var cast = myValue;
-				realValue = cast.timestamp;
+				if (cast == null) {
+					realValue = null;
+					}else{
+						realValue = cast.timestamp;
+					}
 				isDifferent = realValue != rawValue;
 				}else if (field.type == "reference") {
 				var cast = myValue;
@@ -610,7 +653,11 @@ UserManager.User.prototype.getFieldsChanged = function () {var _c_this = this; v
 			var isDifferent = false;
 			if (field.type == "time") {
 				var cast = myValue;
-				realValue = cast.timestamp;
+				if (cast == null) {
+					realValue = null;
+					}else{
+						realValue = cast.timestamp;
+					}
 				isDifferent = realValue != rawValue;
 				}else if (field.type == "reference") {
 				var cast = myValue;
@@ -643,7 +690,11 @@ else 	if (arguments.length == 0) {
 			var isDifferent = false;
 			if (field.type == "time") {
 				var cast = myValue;
-				realValue = cast.timestamp;
+				if (cast == null) {
+					realValue = null;
+					}else{
+						realValue = cast.timestamp;
+					}
 				isDifferent = realValue != rawValue;
 				}else if (field.type == "reference") {
 				var cast = myValue;

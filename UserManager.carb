@@ -19,6 +19,26 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 
 			user.saveToCollection();
 		});
+
+		this.server.confirmation.handleConfirmation("passwordReset", void (Websom.Adapters.Confirmation.Execution exec) => {
+			let string id = exec.storage["id"];
+			let UserManager.User user = this.users.getEntity(id);
+
+			if (exec.params == null or exec.params.typeAsString() != "map") {
+				exec.request.endWithError("Invalid params");
+				return null;
+			}
+
+			let string newPassword = exec.params["password"];
+
+			if (newPassword.typeAsString() == "string" and newPassword.length > 3 and newPassword.length < 256) {
+				user.password = this.server.crypto.hashPassword(newPassword);
+
+				user.saveToCollection();
+			}else{
+				exec.request.endWithError("Invalid password");
+			}
+		});
 	}
 
 	override void registerWithServer() {
@@ -243,6 +263,26 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 					ctx.request.endWithError("Error while sending verification");
 				}
 			});
+
+		this.server.api.route("/reset-password")
+			.input("email")
+				.type("string")
+				.format("email")
+				.limit(1, 255)
+			.executes(void (Websom.APIContext ctx) => {
+				let string email = ctx.get("email");
+
+				let docs = this.users.where("email", "==", email).get();
+				if (docs.documents.length > 0) {
+					let doc = this.users.makeEntity(docs.documents[0]);
+
+					if (this.sendPasswordReset(doc) == false) {
+						ctx.request.endWithError("Error while sending password reset.");
+					}
+				}
+
+				ctx.request.endWithSuccess("Password reset sent! Please check your inbox.");
+			});
 	}
 
 	bool sendVerificationEmail(UserManager.User user) {
@@ -263,6 +303,22 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 		return true;
 	}
 
+	bool sendPasswordReset(UserManager.User user) {
+		let mp = new map();
+		mp["id"] = user.id;
+
+		this.server.confirmation.confirm("passwordReset")
+			.via("email")
+			.using("link")
+			.to(user.email)
+			.store(mp)
+			.subject("Password Reset")
+			.message("Click here to reset your password.")
+			.dispatch();
+		
+		return true;
+	}
+
 	void logLogin(string ip, string location, UserManager.User user, bool success, bool flagged) {
 		this.logins.insert()
 			.set("created", Websom.Time.now())
@@ -275,7 +331,6 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 	}
 
 	void loginWithConnection(Websom.Request req, string adapter, UserManager.User user) {
-		Console.log("Login");
 		this.logLogin(req.client.address, "", user, true, false);
 		req.session.set("user", user.id);
 		req.endWithSuccess("Login successful");

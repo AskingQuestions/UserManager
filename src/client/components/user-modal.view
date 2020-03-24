@@ -16,15 +16,15 @@ template {
 						<div class="login-slide">
 							<transition name="slide">
 								<div class="user-login" v-if="(overrideMode || mode) == 'login'" key="login">
-									<api-form route="/login" ref="loginForm">
-										<input-text name="username" placeholder="Username" icon="user" v-model="login.username" />
+									<api-form route="/login" :use-local-storage="useLocalStorage" ref="loginForm">
+										<input-text name="username" placeholder="Username or Email" icon="user" v-model="login.username" />
 										<input-text name="password" type="password" placeholder="Password" icon="key" v-model="login.password" />
 
 										<button class="full user-login-button" @click="submitLogin()">Login</button>
 									</api-form>
 
 									<div class="mini-options">
-										<a>Forgot your password?</a>
+										<a @click="setMode('reset')">Forgot your password?</a>
 										<a @click="setMode('signup')">Don't have an account?</a>
 									</div>
 
@@ -57,11 +57,24 @@ template {
 										</div>
 									</loader>
 								</div>
+								<div class="user-reset" v-if="(overrideMode || mode) == 'reset'" key="reset">
+									<p style="margin-top: 0;">We will send a password reset email to your inbox.</p>
+									<api-form route="/reset-password" ref="resetForm">
+										<input-text name="email" placeholder="Email" icon="email" v-model="reset.email" />
+
+										<button class="full user-login-button" @click="submitReset()">Reset</button>
+									</api-form>
+
+									<div class="mini-options">
+										<a @click="setMode('login')">Go back.</a>
+										<a @click="setMode('signup')">Don't have an account?</a>
+									</div>
+								</div>
 							</transition>
 						</div>
 					</div>
 
-					<button class="user-cancel full mute" @click="cancel()">Cancel</button>
+					<button v-if="cancelButton" class="user-cancel full mute" @click="cancel()">Cancel</button>
 				</div>
 			</card>
 		</modal>
@@ -74,6 +87,14 @@ script {
 			mode: {
 				type: String,
 				default: "login"
+			},
+			cancelButton: {
+				type: Boolean,
+				default: true
+			},
+			"use-local-storage": {
+				type: Boolean,
+				default: false
 			}
 		},
 		data: () => ({
@@ -88,6 +109,9 @@ script {
 				username: "",
 				password: "",
 				passwordVerify: ""
+			},
+			reset: {
+				email: ""
 			},
 			connectionSignupLoading: false
 		}),
@@ -125,6 +149,8 @@ script {
 					this.loginSuccess();
 			},
 			open() {
+				this.login.username = "";
+				this.login.password = "";
 				this.$refs.modal.open();
 			},
 			cancel() {
@@ -138,6 +164,8 @@ script {
 				this.overrideMode = mode;
 			},
 			loginSuccess() {
+				this.$emit("success");
+
 				if (this.$store.dispatch("login"))
 					this.$refs.modal.close();
 			},
@@ -149,6 +177,11 @@ script {
 
 				if (res.status == "success")
 					this.loginSuccess();
+			},
+			async submitReset() {
+				let res = await this.$refs.resetForm.submit({
+					email: this.reset.email
+				});
 			},
 			submitSignup() {
 				this.$refs.signupForm.submit({
@@ -199,8 +232,9 @@ style {
 		justify-content: flex-start;
 
 		@media (max-width: 424px) {
-			width: 100vw;
-			height: 100vh;
+			width: calc(100vw - var(--base-size) * 2);
+			height: calc(100vh - var(--base-size) * 2);
+			padding: 0 12px;
 		}
 
 		& > .login-container-logo {
