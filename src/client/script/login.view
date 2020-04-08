@@ -4,7 +4,7 @@ info {
 }
 
 script {
-	export default (ctx) => {
-		ctx.store.dispatch("login");
+	export default async (ctx) => {
+		await ctx.store.dispatch("login");
 	};
 }
