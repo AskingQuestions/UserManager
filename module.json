@@ -1,5 +1,6 @@
 {
 	"name": "UserManager",
+	"id": "userManager",
 	"key": "user-manager",
 	"resources": [
 		{
@@ -47,6 +48,12 @@
 				"name": "Sign In Connections",
 				"type": "array",
 				"default": [],
+				"public": true
+			},
+			"requireVerification": {
+				"name": "Require email verification",
+				"type": "boolean",
+				"default": true,
 				"public": true
 			}
 		}
