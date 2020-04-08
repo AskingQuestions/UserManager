@@ -75,6 +75,9 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 	}
 
 	override void collections() {
+		let bool verified = this.server.getConfigPrimitive("module.userSystem", "requireVerification");
+		verified = verified == false;
+
 		let db = this.server.database.central;
 
 		this.users = db.collection("users");
@@ -136,7 +139,7 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 						return Websom.Time.now();
 					})
 					.set("banned", false)
-					.set("verified", false)
+					.set("verified", verified)
 					.set("locked", false)
 					.set("connected", false)
 					.set("connectedAdapter", "")
