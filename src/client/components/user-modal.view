@@ -6,7 +6,7 @@ info {
 template {
 	<div>
 		<modal ref="modal" size="full" modal-class="center-content">
-			<card>
+			<card class="login-card">
 				<div slot="body" class="login-container" :class="'login-container-' + (overrideMode || mode)">
 					<div class="login-container-logo">
 						<img :class="{'square-framed': profileImage}" :src="logo" />
@@ -58,7 +58,7 @@ template {
 									</loader>
 								</div>
 								<div class="user-reset" v-if="(overrideMode || mode) == 'reset'" key="reset">
-									<p style="margin-top: 0;">We will send a password reset email to your inbox.</p>
+									<p style="margin-top: 0;">Lost your password? Submit your email below, and we will send a <i>password reset link</i> directly to your inbox.</p>
 									<api-form route="/reset-password" ref="resetForm">
 										<input-text name="email" placeholder="Email" icon="email" v-model="reset.email" />
 
@@ -183,10 +183,21 @@ script {
 					email: this.reset.email
 				});
 			},
-			submitSignup() {
-				this.$refs.signupForm.submit({
+			async submitSignup() {
+				let res = await this.$refs.signupForm.submit({
 					document: this.signup
 				});
+				
+				if (res.status == "success") {
+					if (!this.websom.getConfig("module.userSystem", "requireVerification")) {
+						this.login.username = this.signup.username;
+						this.login.password = this.signup.password;
+						this.overrideMode = "login";
+						setTimeout(async () => {
+							await this.submitLogin();
+						}, 100);
+					}
+				}
 			},
 			matchPasswords(value) {
 				if (value.length == 0)
@@ -218,6 +229,12 @@ script {
 }
 
 style {
+	@media (max-width: 424px) {
+		.login-card {
+			margin: 0 !important;
+		}
+	}
+
 	.login-container {
 		width: 350px;
 		height: 600px;
@@ -234,7 +251,7 @@ style {
 		@media (max-width: 424px) {
 			width: calc(100vw - var(--base-size) * 2);
 			height: calc(100vh - var(--base-size) * 2);
-			padding: 0 12px;
+			padding: 0;
 		}
 
 		& > .login-container-logo {
