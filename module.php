@@ -113,6 +113,8 @@ $user = $this->users->getEntity($userId);
 return $user;}
 
 function collections() {
+$verified = $this->server->getConfigPrimitive("module.userSystem", "requireVerification");
+$verified = $verified == false;
 $db = $this->server->database->central;
 $this->users = $db->collection("users");
 $this->groupCounts = new Websom_Calculators_KeyCount("groups", "array");
@@ -122,17 +124,17 @@ $this->logins = $db->collection("logins");
 UserManager_Login::applySchema($this->logins)->index()->field("user", "==")->field("created", "dsc");
 $this->registerCollection($this->logins);
 $this->server->api->_c__interface($this->logins, "/logins")->route("/search")->auth($this->loginView)->executes("select")->read("id")->read("user")->read("created")->read("id")->read("flagged")->read("success")->read("location")->read("ip")->filter("default")->filter("user")->field("user", "==");
-$this->server->api->_c__interface($this->users, "/users")->route("/create")->auth($this->userCreate)->executes("insert")->write("username")->format("single-line")->regexTest("^([A-Za-z0-9_-]*)\$")->limit(3, 256)->unique()->write("password")->regexTest("^[ -~]*\$")->limit(8, 256)->mutate(function ($collection, $req, $value) use (&$db) {return $this->server->crypto->hashPassword($value);})->write("email")->format("email")->unique()->setComputed("created", function ($req) use (&$db) {return Websom_Time::now();})->set("banned", false)->set("verified", false)->set("locked", false)->set("connected", false)->set("connectedAdapter", "")->set("groups", [])->route("/get")->auth($this->userGet)->executes("select")->read("username")->read("created")->read("id")->read("bio")->read("social")->read("nickname")->filter("default")->field("id", "==")->route("user-info")->auth($this->userGet)->executes("select")->read("id")->read("username")->read("created")->read("email")->read("firstName")->read("lastName")->filter("default", function ($req, $query) use (&$db) {$userId = $req->session->get("user");
+$this->server->api->_c__interface($this->users, "/users")->route("/create")->auth($this->userCreate)->executes("insert")->write("username")->format("single-line")->regexTest("^([A-Za-z0-9_-]*)\$")->limit(3, 256)->unique()->write("password")->regexTest("^[ -~]*\$")->limit(8, 256)->mutate(function ($collection, $req, $value) use (&$verified, &$db) {return $this->server->crypto->hashPassword($value);})->write("email")->format("email")->unique()->setComputed("created", function ($req) use (&$verified, &$db) {return Websom_Time::now();})->set("banned", false)->set("verified", $verified)->set("locked", false)->set("connected", false)->set("connectedAdapter", "")->set("groups", [])->route("/get")->auth($this->userGet)->executes("select")->read("username")->read("created")->read("id")->read("bio")->read("social")->read("nickname")->filter("default")->field("id", "==")->route("user-info")->auth($this->userGet)->executes("select")->read("id")->read("username")->read("created")->read("email")->read("firstName")->read("lastName")->filter("default", function ($req, $query) use (&$verified, &$db) {$userId = $req->session->get("user");
 if ($userId == null) {
 $req->endWithError("Not logged in");
 return null;}
 $query->where("id", "==", $userId);});
-$this->server->api->route("/users/connection-sign-in")->auth($this->userCreate)->input("adapter")->type("string")->input("data")->type("map")->executes(function ($ctx) use (&$db) {$adapter = $ctx->get("adapter");
+$this->server->api->route("/users/connection-sign-in")->auth($this->userCreate)->input("adapter")->type("string")->input("data")->type("map")->executes(function ($ctx) use (&$verified, &$db) {$adapter = $ctx->get("adapter");
 $data = &$ctx->get("data");
 $this->handleConnectionSignin($ctx->request, $adapter, $data);});
-$this->server->api->route("/logout")->executes(function ($ctx) use (&$db) {$ctx->request->session->delete("user");
+$this->server->api->route("/logout")->executes(function ($ctx) use (&$verified, &$db) {$ctx->request->session->delete("user");
 $ctx->request->endWithSuccess("Signed out");});
-$this->server->api->route("/login")->input("login")->type("string")->limit(3, 256)->input("password")->type("string")->limit(8, 256)->executes(function ($ctx) use (&$db) {$login = $ctx->get("login");
+$this->server->api->route("/login")->input("login")->type("string")->limit(3, 256)->input("password")->type("string")->limit(8, 256)->executes(function ($ctx) use (&$verified, &$db) {$login = $ctx->get("login");
 $password = $ctx->get("password");
 $emailValidator = new Websom_Restrictions_Format("email");
 $userResults = null;
@@ -158,14 +160,14 @@ $ctx->request->session->set("user", $user->id);
 $ctx->request->endWithSuccess("Login successful");}else{
 $this->logLogin($ctx->request->client->address, "", $user, false, false);
 $ctx->request->endWithError("Invalid username or password");}});
-$this->server->api->route("/resend-verification-email")->input("id")->type("string")->limit(1, 255)->executes(function ($ctx) use (&$db) {$user = $this->users->getEntity($ctx->get("id"));
+$this->server->api->route("/resend-verification-email")->input("id")->type("string")->limit(1, 255)->executes(function ($ctx) use (&$verified, &$db) {$user = $this->users->getEntity($ctx->get("id"));
 if ($user == null) {
 $ctx->request->endWithError("Invalid id");
 return null;}
 if ($this->sendVerificationEmail($user)) {
 $ctx->request->endWithSuccess("Verification sent");}else{
 $ctx->request->endWithError("Error while sending verification");}});
-$this->server->api->route("/reset-password")->input("email")->type("string")->format("email")->limit(1, 255)->executes(function ($ctx) use (&$db) {$email = $ctx->get("email");
+$this->server->api->route("/reset-password")->input("email")->type("string")->format("email")->limit(1, 255)->executes(function ($ctx) use (&$verified, &$db) {$email = $ctx->get("email");
 $docs = $this->users->where("email", "==", $email)->get();
 if (count($docs->documents) > 0) {
 $doc = $this->users->makeEntity(_c_lib__arrUtils::readIndex($docs->documents, 0));

@@ -105,6 +105,8 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 
 /*i async*/UserManager.Module.prototype.collections = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
 /*async*/
+		var verified = _c_this.server.getConfigPrimitive("module.userSystem", "requireVerification");
+		verified = verified == false;
 		var db = _c_this.server.database.central;
 		_c_this.users = db.collection("users");
 		_c_this.groupCounts = new Websom.Calculators.KeyCount("groups", "array");
@@ -119,7 +121,7 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 			return (await _c_this.server.crypto.hashPassword/* async call */(value));
 			}).write("email").format("email").unique().setComputed("created", function (req) {
 			return Websom.Time.now();
-			}).set("banned", false).set("verified", false).set("locked", false).set("connected", false).set("connectedAdapter", "").set("groups", []).route("/get").auth(_c_this.userGet).executes("select").read("username").read("created").read("id").read("bio").read("social").read("nickname").filter("default").field("id", "==").route("user-info").auth(_c_this.userGet).executes("select").read("id").read("username").read("created").read("email").read("firstName").read("lastName").filter("default", async function (req, query) {
+			}).set("banned", false).set("verified", verified).set("locked", false).set("connected", false).set("connectedAdapter", "").set("groups", []).route("/get").auth(_c_this.userGet).executes("select").read("username").read("created").read("id").read("bio").read("social").read("nickname").filter("default").field("id", "==").route("user-info").auth(_c_this.userGet).executes("select").read("id").read("username").read("created").read("email").read("firstName").read("lastName").filter("default", async function (req, query) {
 /*async*/
 			var userId = (await req.session.get/* async call */("user"));
 			if (userId == null) {
