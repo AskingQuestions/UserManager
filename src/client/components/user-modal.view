@@ -5,7 +5,7 @@ info {
 
 template {
 	<div>
-		<modal ref="modal" size="full" modal-class="center-content">
+		<modal ref="modal" size="full" :modal-class="'center-content ' + modalClass">
 			<card class="login-card">
 				<div slot="body" class="login-container" :class="'login-container-' + (overrideMode || mode)">
 					<div class="login-container-logo">
@@ -95,6 +95,10 @@ script {
 			"use-local-storage": {
 				type: Boolean,
 				default: false
+			},
+			modalClass: {
+				type: String,
+				default: ""
 			}
 		},
 		data: () => ({
