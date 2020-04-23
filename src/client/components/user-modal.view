@@ -221,7 +221,7 @@ script {
 				if (this.$config.logo != "") {
 					return this.$config.logo;
 				}else{
-					return this.$store.state.assets.logo;
+					return this.websom.resolveAsset("websom", "logo");
 				}
 			},
 			signIns() {
