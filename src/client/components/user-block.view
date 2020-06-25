@@ -1,0 +1,83 @@
+info {
+	"name": "user-block",
+	"type": "component"
+}
+
+template {
+	<div class="user-block">
+		<div class="user-block-square center-content">
+			<icon icon="user" class="large" />
+		</div>
+		<div class="user-block-info">
+			<h4 class="truncate">{{cachedUser.nickname || cachedUser.username}}</h4>
+			<label>@{{cachedUser.username}}</label>
+		</div>
+	</div>
+}
+
+script {
+	export default {
+		props: {
+			user: {
+				type: [String, Number, Object],
+				default: ""
+			}
+		},
+		data: () => ({
+			cachedUser: {
+				username: "Loading"
+			}
+		}),
+		methods: {
+			async getUser() {
+				if (typeof this.user == "object") {
+					this.cachedUser = this.user;
+				}else{
+					let res = await this.websom.fetch("/users/get", {
+						fields: "*",
+						query: {
+							id: this.user
+						}
+					});
+
+					if (res.documents[0])
+						this.cachedUser = res.documents[0];
+				}
+			}
+		},
+		watch: {
+			user() {
+				this.getUser();
+			}
+		},
+		serverPrefetch() {
+			return this.getUser();
+		}
+	}
+}
+
+style {
+	.user-block-square {
+		width: 48px;
+		height: 48px;
+		background: var(--background-overlay);
+	}
+
+	.user-block {
+		display: flex;
+		flex-direction: row;
+	}
+
+	.user-block-info {
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		height: 48px;
+		flex: 1;
+		padding-left: var(--base-size);
+
+		> * {
+			padding: 0px !important;
+		}
+	}
+}
