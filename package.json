@@ -1,5 +1,5 @@
 {
-  "name": "usermanager",
+  "name": "websom-user-manager",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -10,5 +10,16 @@
   "license": "MIT",
   "websom": {
     "type": "module"
+  },
+  "keywords": [
+    "websom",
+    "websom-package",
+    "websom-module",
+    "websom-user-system",
+    "user-manager",
+    "user-system"
+  ],
+  "dependencies": {
+    "google-auth-library": "^6.0.2"
   }
 }
