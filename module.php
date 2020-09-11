@@ -1,8 +1,19 @@
 <?php
+//Relative RichEntity
+//Relative Module
+//Relative Post
+//Relative Archive
 //Relative Module
 //Relative User
 //Relative Login
 //Relative Connection
+//Relative Module
+//Relative Order
+//Relative Product
+//Relative Cart
+//Relative ShippingClass
+//Relative ShippingZone
+//Relative CoreModule
 class UserManager {
 
 function __construct(...$arguments) {
@@ -31,6 +42,8 @@ public $registeredCollections;
 
 public $registeredPermissions;
 
+public $registeredBuckets;
+
 public $name;
 
 public $id;
@@ -49,6 +62,8 @@ public $users;
 
 public $logins;
 
+public $afterLogin;
+
 function __construct($server) {
 $this->userCreate = null;
 $this->userGet = null;
@@ -60,6 +75,7 @@ $this->containers = [];
 $this->bridges = [];
 $this->registeredCollections = [];
 $this->registeredPermissions = [];
+$this->registeredBuckets = [];
 $this->name = "";
 $this->id = "";
 $this->root = "";
@@ -69,6 +85,7 @@ $this->license = "";
 $this->repo = "";
 $this->users = null;
 $this->logins = null;
+$this->afterLogin = new Websom_Event();
 
 $this->server = $server;
 $this->registerWithServer();
@@ -124,7 +141,7 @@ $this->logins = $db->collection("logins");
 UserManager_Login::applySchema($this->logins)->index()->field("user", "==")->field("created", "dsc");
 $this->registerCollection($this->logins);
 $this->server->api->_c__interface($this->logins, "/logins")->route("/search")->auth($this->loginView)->executes("select")->read("id")->read("user")->read("created")->read("id")->read("flagged")->read("success")->read("location")->read("ip")->filter("default")->filter("user")->field("user", "==");
-$this->server->api->_c__interface($this->users, "/users")->route("/create")->auth($this->userCreate)->executes("insert")->write("username")->format("single-line")->regexTest("^([A-Za-z0-9_-]*)\$")->limit(3, 256)->unique()->write("password")->regexTest("^[ -~]*\$")->limit(8, 256)->mutate(function ($collection, $req, $value) use (&$verified, &$db) {return $this->server->crypto->hashPassword($value);})->write("email")->format("email")->unique()->setComputed("created", function ($req) use (&$verified, &$db) {return Websom_Time::now();})->set("banned", false)->set("verified", $verified)->set("locked", false)->set("connected", false)->set("connectedAdapter", "")->set("groups", [])->route("/get")->auth($this->userGet)->executes("select")->read("username")->read("created")->read("id")->read("bio")->read("social")->read("nickname")->filter("default")->field("id", "==")->route("user-info")->auth($this->userGet)->executes("select")->read("id")->read("username")->read("created")->read("email")->read("firstName")->read("lastName")->filter("default", function ($req, $query) use (&$verified, &$db) {$userId = $req->session->get("user");
+$this->server->api->_c__interface($this->users, "/users")->route("/create")->auth($this->userCreate)->executes("insert")->write("username")->format("single-line")->regexTest("^([A-Za-z0-9_-]*)\$")->limit(3, 256)->unique()->write("password")->regexTest("^[ -~]*\$")->limit(8, 256)->mutate(function ($collection, $req, $value) use (&$verified, &$db) {return $this->server->crypto->hashPassword($value);})->write("email")->format("email")->unique()->setComputed("created", function ($req) use (&$verified, &$db) {return Websom_Time::now();})->set("banned", false)->set("verified", $verified)->set("locked", false)->set("connected", false)->set("connectedAdapter", "")->set("groups", [])->route("/get")->auth($this->userGet)->executes("select")->read("username")->read("created")->read("id")->read("bio")->read("social")->read("nickname")->filter("default")->field("id", "==")->route("/login-info")->auth($this->userGet)->executes("select")->read("id")->read("username")->read("created")->read("email")->read("firstName")->read("lastName")->filter("default", function ($req, $query) use (&$verified, &$db) {$userId = $req->session->get("user");
 if ($userId == null) {
 $req->endWithError("Not logged in");
 return null;}
@@ -132,8 +149,31 @@ $query->where("id", "==", $userId);});
 $this->server->api->route("/users/connection-sign-in")->auth($this->userCreate)->input("adapter")->type("string")->input("data")->type("map")->executes(function ($ctx) use (&$verified, &$db) {$adapter = $ctx->get("adapter");
 $data = &$ctx->get("data");
 $this->handleConnectionSignin($ctx->request, $adapter, $data);});
+$this->server->api->route("/users/anonymous")->auth($this->userCreate)->executes(function ($ctx) use (&$verified, &$db) {$tkn = $this->server->crypto->getRandomHex(256);
+$res = $this->users->insert()->set("anonymous", true)->set("anonymousToken", $tkn)->set("created", Websom_Time::now())->set("banned", false)->set("verified", false)->set("locked", false)->set("connected", false)->set("connectedAdapter", "")->set("groups", [])->run();
+$usr = new UserManager_User();
+$usr->id = $res->id;
+$this->logLogin($ctx->request->client->address, "", $usr, true, false);
+$ctx->request->session->set("user", $usr->id);
+$data = new _carb_map();
+$data["token"] = $tkn;
+$ctx->request->endWithData($data);});
 $this->server->api->route("/logout")->executes(function ($ctx) use (&$verified, &$db) {$ctx->request->session->delete("user");
 $ctx->request->endWithSuccess("Signed out");});
+$this->server->api->route("/users/anonymous-login")->input("token")->type("string")->limit(128, 512)->executes(function ($ctx) use (&$verified, &$db) {$users = $this->users->select()->where("anonymous", "==", true)->where("anonymousToken", "==", $ctx->get("token"))->get();
+if (count($users->documents) > 0) {
+$usr = $this->users->makeEntity(_c_lib__arrUtils::readIndex($users->documents, 0));
+$this->logLogin($ctx->request->client->address, "", $usr, true, false);
+$ctx->request->session->set("user", $usr->id);
+$mp = new _carb_map();
+$mp["message"] = "Login successful";
+$eData = new Websom_Standard_UserSystem_LoginEventData();
+$eData->user = $usr;
+$eData->responseData = $mp;
+$eData->request = $ctx->request;
+$this->afterLogin->invoke($eData);
+$ctx->request->endWithData($mp);}else{
+$ctx->request->endWithError("Invalid token");}});
 $this->server->api->route("/login")->input("login")->type("string")->limit(3, 256)->input("password")->type("string")->limit(8, 256)->executes(function ($ctx) use (&$verified, &$db) {$login = $ctx->get("login");
 $password = $ctx->get("password");
 $emailValidator = new Websom_Restrictions_Format("email");
@@ -157,7 +197,14 @@ return null;}
 if ($passedPassword) {
 $this->logLogin($ctx->request->client->address, "", $user, true, false);
 $ctx->request->session->set("user", $user->id);
-$ctx->request->endWithSuccess("Login successful");}else{
+$mp = new _carb_map();
+$mp["message"] = "Login successful";
+$eData = new Websom_Standard_UserSystem_LoginEventData();
+$eData->user = $user;
+$eData->responseData = $mp;
+$eData->request = $ctx->request;
+$this->afterLogin->invoke($eData);
+$ctx->request->endWithData($mp);}else{
 $this->logLogin($ctx->request->client->address, "", $user, false, false);
 $ctx->request->endWithError("Invalid username or password");}});
 $this->server->api->route("/resend-verification-email")->input("id")->type("string")->limit(1, 255)->executes(function ($ctx) use (&$verified, &$db) {$user = $this->users->getEntity($ctx->get("id"));
@@ -257,6 +304,12 @@ return $perm;
 }
 }
 
+function registerBucket($name) {
+$bucket = new Websom_Bucket($this->server, $name, $this->name);
+array_push($this->registeredBuckets, $bucket);
+$this->server->registerBucket($bucket);
+return $bucket;}
+
 function setupData() {
 }
 
@@ -280,6 +333,7 @@ return $bridges;}
 //Relative Stat
 //Relative primitive
 //Relative object
+//Relative Math
 //Relative array
 //Relative bool
 //Relative byte
@@ -368,7 +422,13 @@ static function linkToCollection($collection) {
 function getFieldValue($field) {
 
 
-			return $this->$field;
+			$camel = ucfirst($field);
+			
+			if (method_exists($this, "save" . $camel)) {
+				return $this->{"save" . $camel}($this->{$k});
+			}else{
+				return $this->{$k};
+			}
 		}
 
 function &getFieldsChanged() {
@@ -377,7 +437,9 @@ for ($i = 0; $i < count($this->collection->appliedSchema->fields); $i++) {
 $field = _c_lib__arrUtils::readIndex($this->collection->appliedSchema->fields, $i);
 $realValue = null;
 $myValue = $this->getFieldValue($field->name);
-$rawValue = $this->rawFields[$field->name];
+$rawValue = null;
+if ($this->rawFields != null) {
+$rawValue = $this->rawFields[$field->name];}
 $isDifferent = false;
 if ($field->type == "time") {
 $cast = $myValue;
@@ -406,6 +468,15 @@ for ($i = 0; $i < count($fields); $i++) {
 $field = _c_lib__arrUtils::readIndex($fields, $i);
 $update->set($field->name, $this->getFieldValue($field->name));}
 return $update->run();}
+
+function insertIntoCollection() {
+$fields = &$this->getFieldsChanged();
+$insert = $this->collection->insert();
+for ($i = 0; $i < count($fields); $i++) {
+$field = _c_lib__arrUtils::readIndex($fields, $i);
+$insert->set($field->name, $this->getFieldValue($field->name));}
+$res = $insert->run();
+$this->id = $res->id;}
 
 function loadFromMap($data) {
 $this->rawFields = $data;
@@ -481,6 +552,10 @@ public $banned;
 
 public $verified;
 
+public $anonymous;
+
+public $anonymousToken;
+
 public $connected;
 
 public $connectedAdapter;
@@ -524,6 +599,8 @@ $this->lastLogin = null;
 $this->lastBan = null;
 $this->banned = false;
 $this->verified = false;
+$this->anonymous = false;
+$this->anonymousToken = "";
 $this->connected = false;
 $this->connectedAdapter = "";
 $this->locked = false;
@@ -576,14 +653,26 @@ if (count($arguments) == 1 and (gettype($arguments[0]) == 'string' or gettype($a
 $field = $arguments[0];
 
 
-			return $this->$field;
+			$camel = ucfirst($field);
+			
+			if (method_exists($this, "save" . $camel)) {
+				return $this->{"save" . $camel}($this->{$k});
+			}else{
+				return $this->{$k};
+			}
 		
 }
 else if (count($arguments) == 1 and (gettype($arguments[0]) == 'string' or gettype($arguments[0]) == 'NULL')) {
 $field = $arguments[0];
 
 
-			return $this->$field;
+			$camel = ucfirst($field);
+			
+			if (method_exists($this, "save" . $camel)) {
+				return $this->{"save" . $camel}($this->{$k});
+			}else{
+				return $this->{$k};
+			}
 		
 }
 }
@@ -595,7 +684,9 @@ for ($i = 0; $i < count($this->collection->appliedSchema->fields); $i++) {
 $field = _c_lib__arrUtils::readIndex($this->collection->appliedSchema->fields, $i);
 $realValue = null;
 $myValue = $this->getFieldValue($field->name);
-$rawValue = $this->rawFields[$field->name];
+$rawValue = null;
+if ($this->rawFields != null) {
+$rawValue = $this->rawFields[$field->name];}
 $isDifferent = false;
 if ($field->type == "time") {
 $cast = $myValue;
@@ -623,7 +714,9 @@ for ($i = 0; $i < count($this->collection->appliedSchema->fields); $i++) {
 $field = _c_lib__arrUtils::readIndex($this->collection->appliedSchema->fields, $i);
 $realValue = null;
 $myValue = $this->getFieldValue($field->name);
-$rawValue = $this->rawFields[$field->name];
+$rawValue = null;
+if ($this->rawFields != null) {
+$rawValue = $this->rawFields[$field->name];}
 $isDifferent = false;
 if ($field->type == "time") {
 $cast = $myValue;
@@ -666,6 +759,27 @@ return $update->run();
 }
 }
 
+function insertIntoCollection(...$arguments) {
+if (count($arguments) == 0) {
+$fields = &$this->getFieldsChanged();
+$insert = $this->collection->insert();
+for ($i = 0; $i < count($fields); $i++) {
+$field = _c_lib__arrUtils::readIndex($fields, $i);
+$insert->set($field->name, $this->getFieldValue($field->name));}
+$res = $insert->run();
+$this->id = $res->id;
+}
+else if (count($arguments) == 0) {
+$fields = &$this->getFieldsChanged();
+$insert = $this->collection->insert();
+for ($i = 0; $i < count($fields); $i++) {
+$field = _c_lib__arrUtils::readIndex($fields, $i);
+$insert->set($field->name, $this->getFieldValue($field->name));}
+$res = $insert->run();
+$this->id = $res->id;
+}
+}
+
 function loadFromMap($data) {
 $this->rawFields = $data;
 
@@ -696,14 +810,17 @@ $this->lastBan = new Websom_Time();
 $this->lastBan->timestamp = $value;}
 
 static function getSchema($collection) {
-return $collection->schema()->field("username", "string")->field("email", "string")->field("password", "string")->field("firstName", "string")->field("lastName", "string")->field("department", "string")->field("company", "string")->field("address", "string")->field("city", "string")->field("state", "string")->field("country", "string")->field("postCode", "string")->field("bio", "string")->field("nickname", "string")->field("social", "array")->field("role", "string")->field("created", "time")->field("lastLogin", "time")->field("lastBan", "time")->field("banned", "boolean")->field("verified", "boolean")->field("connected", "boolean")->field("connectedAdapter", "string")->field("locked", "boolean")->field("groups", "array");}
+return $collection->schema()->field("username", "string")->field("email", "string")->field("password", "string")->field("firstName", "string")->field("lastName", "string")->field("department", "string")->field("company", "string")->field("address", "string")->field("city", "string")->field("state", "string")->field("country", "string")->field("postCode", "string")->field("bio", "string")->field("nickname", "string")->field("social", "array")->field("role", "string")->field("created", "time")->field("lastLogin", "time")->field("lastBan", "time")->field("banned", "boolean")->field("verified", "boolean")->field("anonymous", "boolean")->field("anonymousToken", "string")->field("connected", "boolean")->field("connectedAdapter", "string")->field("locked", "boolean")->field("groups", "array");}
 
 
 }class UserManager_GoogleConnection {
 public $server;
 
+public $adapterKey;
+
 function __construct($server) {
 $this->server = null;
+$this->adapterKey = "";
 
 $this->server = $server;
 }

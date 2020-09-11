@@ -155,7 +155,7 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 					.read("nickname")
 					.filter("default")
 						.field("id", "==")
-			.route("user-info")
+			.route("/login-info")
 				.auth(this.userGet)
 				.executes("select")
 					.read("id")
@@ -188,10 +188,70 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 				this.handleConnectionSignin(ctx.request, adapter, data);
 			});
 
+		this.server.api.route("/users/anonymous")
+			.auth(this.userCreate)
+			.executes(void (Websom.APIContext ctx) => {
+				let tkn = this.server.crypto.getRandomHex(256);
+				let res = this.users.insert()
+					.set("anonymous", true)
+					.set("anonymousToken", tkn)
+					.set("created", Websom.Time.now())
+					.set("banned", false)
+					.set("verified", false)
+					.set("locked", false)
+					.set("connected", false)
+					.set("connectedAdapter", "")
+					.set("groups", new <string>array())
+					.run();
+					
+				let usr = new UserManager.User();
+				usr.id = res.id;
+
+				this.logLogin(ctx.request.client.address, "", usr, true, false);
+				ctx.request.session.set("user", usr.id);
+
+				let data = new map();
+
+				data["token"] = tkn;
+
+				ctx.request.endWithData(data);
+			});
+
 		this.server.api.route("/logout")
 			.executes(void (Websom.APIContext ctx) => {
 				ctx.request.session.delete("user");
 				ctx.request.endWithSuccess("Signed out");
+			});
+
+		this.server.api.route("/users/anonymous-login")
+			.input("token")
+				.type("string")
+				.limit(128, 512)
+			.executes(void (Websom.APIContext ctx) => {
+				let users = this.users.select()
+					.where("anonymous", "==", true)
+					.where("anonymousToken", "==", ctx.get("token"))
+					.get();
+
+				if (users.documents.length > 0) {
+					let UserManager.User usr = this.users.makeEntity(users.documents[0]);
+
+					this.logLogin(ctx.request.client.address, "", usr, true, false);
+					ctx.request.session.set("user", usr.id);
+					let mp = new map();
+					mp["message"] = "Login successful";
+
+					let eData = new Websom.Standard.UserSystem.LoginEventData();
+					eData.user = usr;
+					eData.responseData = mp;
+					eData.request = ctx.request;
+
+					this.afterLogin.invoke(eData);
+
+					ctx.request.endWithData(mp);
+				}else{
+					ctx.request.endWithError("Invalid token");
+				}
 			});
 
 		this.server.api.route("/login")
@@ -241,7 +301,17 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 				if (passedPassword) {
 					this.logLogin(ctx.request.client.address, "", user, true, false);
 					ctx.request.session.set("user", user.id);
-					ctx.request.endWithSuccess("Login successful");
+					let mp = new map();
+					mp["message"] = "Login successful";
+
+					let eData = new Websom.Standard.UserSystem.LoginEventData();
+					eData.user = user;
+					eData.responseData = mp;
+					eData.request = ctx.request;
+
+					this.afterLogin.invoke(eData);
+
+					ctx.request.endWithData(mp);
 				}else{
 					this.logLogin(ctx.request.client.address, "", user, false, false);
 					ctx.request.endWithError("Invalid username or password");

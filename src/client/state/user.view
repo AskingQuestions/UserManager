@@ -12,6 +12,15 @@ script {
 				console.log("Logout");
 			},
 			async login(ctx) {
+				if (ctx.rootState.userSystem.user)
+					return true;
+
+				if (ctx.rootState.userSystem.loadingUser) {
+					return await new Promise((res) => {
+						ctx.commit("hookLogin", res);
+					});
+				}
+
 				let info = await websom.fetch("/users/login-info", {
 					query: {},
 					fields: {"*": true}
@@ -19,9 +28,39 @@ script {
 
 				if (info.status == "success" && info.documents.length > 0) {
 					ctx.commit("setUser", websom.makeEntity("/users", info.documents[0]));
+					ctx.commit("triggerLoginHooks", true);
 					return true;
 				} else {
+					ctx.commit("triggerLoginHooks", false);
 					return false;
+				}
+			},
+			async loginAnonymously(ctx) {
+				if (!sessionStorage.getItem("Websom-Session") || !(await ctx.dispatch("login"))) {
+					let tkn = localStorage.getItem("anonymous-token");
+
+					if (!tkn) {
+						let newUser = await websom.fetch("/users/anonymous");
+						localStorage.setItem("anonymous-token", newUser.data.token);
+						tkn = newUser.data.token;
+						console.log("Created new anonymous user");
+					}else{
+						let res = await websom.fetch("/users/anonymous-login", {
+							token: tkn
+						});
+
+						if (res.status == "success") {
+							console.log("Anonymous login");
+						}
+					}
+
+					await new Promise((res) => {
+						setTimeout(() => {
+							res();
+						}, 300)
+					});
+
+					await ctx.dispatch("login");
 				}
 			}
 		}

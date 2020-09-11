@@ -1,7 +1,18 @@
+//Relative RichEntity
+//Relative Module
+//Relative Post
+//Relative Archive
 //Relative Module
 //Relative User
 //Relative Login
 //Relative Connection
+//Relative Module
+//Relative Order
+//Relative Product
+//Relative Cart
+//Relative ShippingClass
+//Relative ShippingZone
+//Relative CoreModule
 UserManager = function () {var _c_this = this;
 
 
@@ -28,6 +39,8 @@ UserManager.Module = function (server) {var _c_this = this;
 
 	this.registeredPermissions = [];
 
+	this.registeredBuckets = [];
+
 	this.name = "";
 
 	this.id = "";
@@ -45,6 +58,8 @@ UserManager.Module = function (server) {var _c_this = this;
 	this.users = null;
 
 	this.logins = null;
+
+	this.afterLogin = new Websom.Event();
 
 		_c_this.server = server;
 		_c_this.registerWithServer();
@@ -121,7 +136,7 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 			return (await _c_this.server.crypto.hashPassword/* async call */(value));
 			}).write("email").format("email").unique().setComputed("created", function (req) {
 			return Websom.Time.now();
-			}).set("banned", false).set("verified", verified).set("locked", false).set("connected", false).set("connectedAdapter", "").set("groups", []).route("/get").auth(_c_this.userGet).executes("select").read("username").read("created").read("id").read("bio").read("social").read("nickname").filter("default").field("id", "==").route("user-info").auth(_c_this.userGet).executes("select").read("id").read("username").read("created").read("email").read("firstName").read("lastName").filter("default", async function (req, query) {
+			}).set("banned", false).set("verified", verified).set("locked", false).set("connected", false).set("connectedAdapter", "").set("groups", []).route("/get").auth(_c_this.userGet).executes("select").read("username").read("created").read("id").read("bio").read("social").read("nickname").filter("default").field("id", "==").route("/login-info").auth(_c_this.userGet).executes("select").read("id").read("username").read("created").read("email").read("firstName").read("lastName").filter("default", async function (req, query) {
 /*async*/
 			var userId = (await req.session.get/* async call */("user"));
 			if (userId == null) {
@@ -137,10 +152,43 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 			var data = ctx.get("data");
 			(await _c_this.handleConnectionSignin/* async call */(ctx.request, adapter, data));
 			});
+		_c_this.server.api.route("/users/anonymous").auth(_c_this.userCreate).executes(async function (ctx) {
+/*async*/
+			var tkn = (await _c_this.server.crypto.getRandomHex/* async call */(256));
+			var res = (await _c_this.users.insert().set("anonymous", true).set("anonymousToken", tkn).set("created", Websom.Time.now()).set("banned", false).set("verified", false).set("locked", false).set("connected", false).set("connectedAdapter", "").set("groups", []).run/* async call */());
+			var usr = new UserManager.User();
+			usr.id = res.id;
+			(await _c_this.logLogin/* async call */(ctx.request.client.address, "", usr, true, false));
+			(await ctx.request.session.set/* async call */("user", usr.id));
+			var data = {};
+			data["token"] = tkn;
+			(await ctx.request.endWithData/* async call */(data));
+			});
 		_c_this.server.api.route("/logout").executes(async function (ctx) {
 /*async*/
 			(await ctx.request.session.delete/* async call */("user"));
 			(await ctx.request.endWithSuccess/* async call */("Signed out"));
+			});
+		_c_this.server.api.route("/users/anonymous-login").input("token").type("string").limit(128, 512).executes(async function (ctx) {
+/*async*/
+			var users = (await _c_this.users.select().where("anonymous", "==", true).where("anonymousToken", "==", ctx.get("token")).get/* async call */());
+			if (users.documents.length > 0) {
+/*async*/
+				var usr = (await _c_this.users.makeEntity/* async call */(users.documents[0]));
+				(await _c_this.logLogin/* async call */(ctx.request.client.address, "", usr, true, false));
+				(await ctx.request.session.set/* async call */("user", usr.id));
+				var mp = {};
+				mp["message"] = "Login successful";
+				var eData = new Websom.Standard.UserSystem.LoginEventData();
+				eData.user = usr;
+				eData.responseData = mp;
+				eData.request = ctx.request;
+				_c_this.afterLogin.invoke(eData);
+				(await ctx.request.endWithData/* async call */(mp));
+				}else{
+/*async*/
+					(await ctx.request.endWithError/* async call */("Invalid token"));
+				}
 			});
 		_c_this.server.api.route("/login").input("login").type("string").limit(3, 256).input("password").type("string").limit(8, 256).executes(async function (ctx) {
 /*async*/
@@ -178,7 +226,14 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 /*async*/
 				(await _c_this.logLogin/* async call */(ctx.request.client.address, "", user, true, false));
 				(await ctx.request.session.set/* async call */("user", user.id));
-				(await ctx.request.endWithSuccess/* async call */("Login successful"));
+				var mp = {};
+				mp["message"] = "Login successful";
+				var eData = new Websom.Standard.UserSystem.LoginEventData();
+				eData.user = user;
+				eData.responseData = mp;
+				eData.request = ctx.request;
+				_c_this.afterLogin.invoke(eData);
+				(await ctx.request.endWithData/* async call */(mp));
 				}else{
 /*async*/
 					(await _c_this.logLogin/* async call */(ctx.request.client.address, "", user, false, false));
@@ -327,6 +382,12 @@ else 	if (arguments.length == 1 && (typeof arguments[0] == 'string' || typeof ar
 	}
 }
 
+UserManager.Module.prototype.registerBucket = function (name) {var _c_this = this; var _c_root_method_arguments = arguments;
+		var bucket = new Websom.Bucket(_c_this.server, name, _c_this.name);
+		_c_this.registeredBuckets.push(bucket);
+		_c_this.server.registerBucket(bucket);
+		return bucket;}
+
 UserManager.Module.prototype.setupData = function () {var _c_this = this; var _c_root_method_arguments = arguments;
 }
 
@@ -438,7 +499,13 @@ UserManager.Login.linkToCollection = function (collection) {var _c_this = this; 
 
 UserManager.Login.prototype.getFieldValue = function (field) {var _c_this = this; var _c_root_method_arguments = arguments;
 		
-			return this[field];
+			let camel = field[0].toUpperCase() + field.substr(1, field.length);
+
+			if (this["save" + camel]) {
+				return this["save" + camel](this[field]);
+			}else{
+				return this[field];
+			}
 		
 		}
 
@@ -448,7 +515,10 @@ UserManager.Login.prototype.getFieldsChanged = function () {var _c_this = this; 
 			var field = _c_this.collection.appliedSchema.fields[i];
 			var realValue = null;
 			var myValue = _c_this.getFieldValue(field.name);
-			var rawValue = _c_this.rawFields[field.name];
+			var rawValue = null;
+			if (_c_this.rawFields != null) {
+				rawValue = _c_this.rawFields[field.name];
+				}
 			var isDifferent = false;
 			if (field.type == "time") {
 				var cast = myValue;
@@ -488,6 +558,17 @@ UserManager.Login.prototype.getFieldsChanged = function () {var _c_this = this; 
 			update.set(field.name, _c_this.getFieldValue(field.name));
 			}
 		return (await update.run/* async call */());}
+
+/*i async*/UserManager.Login.prototype.insertIntoCollection = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
+/*async*/
+		var fields = _c_this.getFieldsChanged();
+		var insert = _c_this.collection.insert();
+		for (var i = 0; i < fields.length; i++) {
+			var field = fields[i];
+			insert.set(field.name, _c_this.getFieldValue(field.name));
+			}
+		var res = (await insert.run/* async call */());
+		_c_this.id = res.id;}
 
 /*i async*/UserManager.Login.prototype.loadFromMap = async function (data) {var _c_this = this; var _c_root_method_arguments = arguments;
 		_c_this.rawFields = data;
@@ -562,6 +643,10 @@ UserManager.User = function () {var _c_this = this;
 
 	this.verified = false;
 
+	this.anonymous = false;
+
+	this.anonymousToken = "";
+
 	this.connected = false;
 
 	this.connectedAdapter = "";
@@ -631,14 +716,26 @@ UserManager.User.prototype.getFieldValue = function () {var _c_this = this; var 
 	if (arguments.length == 1 && (typeof arguments[0] == 'string' || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
 		var field = arguments[0];
 		
-			return this[field];
+			let camel = field[0].toUpperCase() + field.substr(1, field.length);
+
+			if (this["save" + camel]) {
+				return this["save" + camel](this[field]);
+			}else{
+				return this[field];
+			}
 		
 		
 	}
 else 	if (arguments.length == 1 && (typeof arguments[0] == 'string' || typeof arguments[0] == 'undefined' || arguments[0] === null)) {
 		var field = arguments[0];
 		
-			return this[field];
+			let camel = field[0].toUpperCase() + field.substr(1, field.length);
+
+			if (this["save" + camel]) {
+				return this["save" + camel](this[field]);
+			}else{
+				return this[field];
+			}
 		
 		
 	}
@@ -651,7 +748,10 @@ UserManager.User.prototype.getFieldsChanged = function () {var _c_this = this; v
 			var field = _c_this.collection.appliedSchema.fields[i];
 			var realValue = null;
 			var myValue = _c_this.getFieldValue(field.name);
-			var rawValue = _c_this.rawFields[field.name];
+			var rawValue = null;
+			if (_c_this.rawFields != null) {
+				rawValue = _c_this.rawFields[field.name];
+				}
 			var isDifferent = false;
 			if (field.type == "time") {
 				var cast = myValue;
@@ -688,7 +788,10 @@ else 	if (arguments.length == 0) {
 			var field = _c_this.collection.appliedSchema.fields[i];
 			var realValue = null;
 			var myValue = _c_this.getFieldValue(field.name);
-			var rawValue = _c_this.rawFields[field.name];
+			var rawValue = null;
+			if (_c_this.rawFields != null) {
+				rawValue = _c_this.rawFields[field.name];
+				}
 			var isDifferent = false;
 			if (field.type == "time") {
 				var cast = myValue;
@@ -744,6 +847,31 @@ else 	if (arguments.length == 0) {
 	}
 }
 
+/*i async*/UserManager.User.prototype.insertIntoCollection = async function () {var _c_this = this; var _c_root_method_arguments = arguments;
+	if (arguments.length == 0) {
+/*async*/
+		var fields = _c_this.getFieldsChanged();
+		var insert = _c_this.collection.insert();
+		for (var i = 0; i < fields.length; i++) {
+			var field = fields[i];
+			insert.set(field.name, _c_this.getFieldValue(field.name));
+			}
+		var res = (await insert.run/* async call */());
+		_c_this.id = res.id;
+	}
+else 	if (arguments.length == 0) {
+/*async*/
+		var fields = _c_this.getFieldsChanged();
+		var insert = _c_this.collection.insert();
+		for (var i = 0; i < fields.length; i++) {
+			var field = fields[i];
+			insert.set(field.name, _c_this.getFieldValue(field.name));
+			}
+		var res = (await insert.run/* async call */());
+		_c_this.id = res.id;
+	}
+}
+
 /*i async*/UserManager.User.prototype.loadFromMap = async function (data) {var _c_this = this; var _c_root_method_arguments = arguments;
 		_c_this.rawFields = data;
 		
@@ -774,10 +902,12 @@ UserManager.User.prototype.loadLastBan = function (value) {var _c_this = this; v
 		_c_this.lastBan.timestamp = value;}
 
 UserManager.User.getSchema = function (collection) {var _c_this = this; var _c_root_method_arguments = arguments;
-		return collection.schema().field("username", "string").field("email", "string").field("password", "string").field("firstName", "string").field("lastName", "string").field("department", "string").field("company", "string").field("address", "string").field("city", "string").field("state", "string").field("country", "string").field("postCode", "string").field("bio", "string").field("nickname", "string").field("social", "array").field("role", "string").field("created", "time").field("lastLogin", "time").field("lastBan", "time").field("banned", "boolean").field("verified", "boolean").field("connected", "boolean").field("connectedAdapter", "string").field("locked", "boolean").field("groups", "array");}
+		return collection.schema().field("username", "string").field("email", "string").field("password", "string").field("firstName", "string").field("lastName", "string").field("department", "string").field("company", "string").field("address", "string").field("city", "string").field("state", "string").field("country", "string").field("postCode", "string").field("bio", "string").field("nickname", "string").field("social", "array").field("role", "string").field("created", "time").field("lastLogin", "time").field("lastBan", "time").field("banned", "boolean").field("verified", "boolean").field("anonymous", "boolean").field("anonymousToken", "string").field("connected", "boolean").field("connectedAdapter", "string").field("locked", "boolean").field("groups", "array");}
 
 UserManager.GoogleConnection = function (server) {var _c_this = this;
 	this.server = null;
+
+	this.adapterKey = "";
 
 		_c_this.server = server;
 }
