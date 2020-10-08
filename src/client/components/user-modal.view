@@ -30,7 +30,7 @@ template {
 
 									<h3 v-if="signIns.length > 0" class="center-content">OR</h3>
 
-									<div v-for="signIn in signIns" :key="signIn.name">
+									<div v-for="signIn in signIns" :key="'login' + signIn.name">
 										<component @sign-in="signinWithConnection(signIn.name, $event)" :is="signIn.component" />
 									</div>
 								</div>
@@ -52,7 +52,7 @@ template {
 
 										<h3 v-if="signIns.length > 0" class="center-content">OR</h3>
 
-										<div v-for="signIn in signIns" :key="signIn.name">
+										<div v-for="signIn in signIns" :key="'signup' + signIn.name">
 											<component @sign-in="signupWithConnection(signIn.name, $event)" :is="signIn.component" />
 										</div>
 									</loader>
@@ -66,7 +66,7 @@ template {
 									</api-form>
 
 									<div class="mini-options">
-										<a @click="setMode('login')">Go back.</a>
+										<a @click="setMode('login')">Go back</a>
 										<a @click="setMode('signup')">Don't have an account?</a>
 									</div>
 								</div>
@@ -133,8 +133,10 @@ script {
 
 				this.$refs.signupForm.setStatus(res);
 
-				if (res.status == "success")
+				if (res.status == "success") {
+					this.websom.trigger("userSystem.manualLogin");
 					this.loginSuccess();
+				}
 			},
 			async signinWithConnection(adapter, data) {
 				this.profileImage = data.image;
@@ -149,8 +151,10 @@ script {
 
 				this.$refs.loginForm.setStatus(res);
 
-				if (res.status == "success")
-					this.loginSuccess();
+				if (res.status == "success") {
+					this.websom.trigger("userSystem.manualLogin");
+					await this.loginSuccess();
+				}
 			},
 			open() {
 				this.login.username = "";
@@ -167,10 +171,12 @@ script {
 				this.profileImage = null;
 				this.overrideMode = mode;
 			},
-			loginSuccess() {
+			async loginSuccess() {
 				this.$emit("success");
 
-				if (this.$store.dispatch("login"))
+				await new Promise((res) => setTimeout(res, 500));
+
+				if (await this.$store.dispatch("login", true))
 					this.$refs.modal.close();
 			},
 			async submitLogin() {
@@ -179,8 +185,10 @@ script {
 					password: this.login.password
 				});
 
+				this.websom.trigger("userSystem.manualLogin");
+
 				if (res.status == "success")
-					this.loginSuccess();
+					await this.loginSuccess();
 			},
 			async submitReset() {
 				let res = await this.$refs.resetForm.submit({

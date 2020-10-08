@@ -136,7 +136,7 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 			return (await _c_this.server.crypto.hashPassword/* async call */(value));
 			}).write("email").format("email").unique().setComputed("created", function (req) {
 			return Websom.Time.now();
-			}).set("banned", false).set("verified", verified).set("locked", false).set("connected", false).set("connectedAdapter", "").set("groups", []).route("/get").auth(_c_this.userGet).executes("select").read("username").read("created").read("id").read("bio").read("social").read("nickname").filter("default").field("id", "==").route("/login-info").auth(_c_this.userGet).executes("select").read("id").read("username").read("created").read("email").read("firstName").read("lastName").filter("default", async function (req, query) {
+			}).set("banned", false).set("verified", verified).set("locked", false).set("connected", false).set("connectedAdapter", "").set("groups", []).route("/get").auth(_c_this.userGet).executes("select").read("username").read("created").read("id").read("bio").read("social").read("nickname").filter("default").field("id", "==").route("/login-info").auth(_c_this.userGet).executes("select").read("id").read("username").read("created").read("email").read("firstName").read("lastName").read("anonymous").filter("default", async function (req, query) {
 /*async*/
 			var userId = (await req.session.get/* async call */("user"));
 			if (userId == null) {

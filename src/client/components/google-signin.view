@@ -7,7 +7,7 @@ info {
 template {
 	<div class="google-signin">
 		<loader :active="!gapiLoaded">
-			<div style="min-height: 54px;" id="google-sign-in" class="center-content"></div>
+			<div ref="gsignin" style="min-height: 54px;" id="google-sign-in" class="center-content"></div>
 		</loader>
 	</div>
 }
@@ -43,7 +43,7 @@ script {
 					if (gAuth.isSignedIn.get())
 						gAuth.signOut();
 					
-					gapi.signin2.render("google-sign-in", {
+					gapi.signin2.render(this.$refs.gsignin, {
 						theme: this.$store.state.websom.colorScheme,
 						onsuccess: (googleUser) => this.signIn(googleUser)
 					});

@@ -8,12 +8,14 @@ script {
 		actions: {
 			async logout(ctx) {
 				ctx.commit("setUser", null);
+				localStorage.removeItem("anonymous-token");
 				await websom.fetch("/logout", {});
 				console.log("Logout");
 			},
-			async login(ctx) {
-				if (ctx.rootState.userSystem.user)
-					return true;
+			async login(ctx, overwrite) {
+				if (!overwrite)
+					if (ctx.rootState.userSystem.user)
+						return true;
 
 				if (ctx.rootState.userSystem.loadingUser) {
 					return await new Promise((res) => {
@@ -25,10 +27,11 @@ script {
 					query: {},
 					fields: {"*": true}
 				});
-
+				
 				if (info.status == "success" && info.documents.length > 0) {
 					ctx.commit("setUser", websom.makeEntity("/users", info.documents[0]));
 					ctx.commit("triggerLoginHooks", true);
+					websom.trigger("userSystem.login");
 					return true;
 				} else {
 					ctx.commit("triggerLoginHooks", false);

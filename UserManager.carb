@@ -164,6 +164,7 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 					.read("email")
 					.read("firstName")
 					.read("lastName")
+					.read("anonymous")
 					.filter("default", void (Websom.Request req, Websom.Adapters.Database.SelectQuery query) => {
 						let userId = req.session.get("user");
 
