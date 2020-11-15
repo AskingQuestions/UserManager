@@ -65,6 +65,18 @@ script {
 
 					await ctx.dispatch("login");
 				}
+			},
+			async hasLoginSaved() {
+				console.log(sessionStorage.getItem("Websom-Session"));
+				if (sessionStorage.getItem("Websom-Session")) {
+					return true;
+				}else{
+					if (localStorage.getItem("anonymous-token")) {
+						return true;
+					}else{
+						return false;
+					}
+				}
 			}
 		}
 	})
