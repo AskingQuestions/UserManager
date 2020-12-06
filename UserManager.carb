@@ -143,7 +143,28 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 					.set("locked", false)
 					.set("connected", false)
 					.set("connectedAdapter", "")
-					.set("groups", new <string>array())			
+					.set("groups", new <string>array())
+					.beforeWrite(void (Websom.APIContext ctx) => {
+						let user = ctx.request.user();
+						if (user != null) {
+							if (user.anonymous) {
+								this.users.update().where("id", "==", user.id)
+									.set("username", ctx.get("username"))
+									.set("password", ctx.getMutated("password"))
+									.set("email", ctx.get("email"))
+									.set("verified", verified)
+									.set("connected", false)
+									.set("connectedAdapter", "")
+									.set("groups", new <string>array())
+									.set("anonymous", false)
+									.run();
+
+								ctx.request.endWithSuccess("Account Created");
+							}else{
+								ctx.request.endWithError("You are currently logged in");
+							}
+						}
+					})	
 			.route("/get")
 				.auth(this.userGet)
 				.executes("select")
@@ -283,6 +304,19 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 
 				let UserManager.User user = this.users.makeEntity(userResults.documents[0]);
 
+				let expiration = Websom.Time.now() - 1000 * 60 * 30;
+
+				let logins = this.logins.where("user", "==", user.id).where("created", ">", expiration).limit(3).get();
+				let ipLogins = this.logins.where("ip", "==", ctx.request.client.address).where("created", ">", expiration).limit(3).get();
+				Console.log(logins.documents.length + ipLogins.documents.length);
+
+				if (logins.documents.length + ipLogins.documents.length >= 3) {
+					if (ctx.request.checkCaptcha() == false) {
+						ctx.request.endWithCaptcha();
+						return null;
+					}
+				}
+
 				let passedPassword = this.server.crypto.verifyPassword(user.password, password);
 
 				if (user.verified == false) {
@@ -411,24 +445,48 @@ class UserManager.Module extends Websom.Module, Websom.Standard.UserSystem.Modul
 	}
 
 	void createUserWithConnection(Websom.Request req, string adapter, Websom.Adapters.UserSystem.ConnectionUser user) {
-		let res = this.users.insert()
-			.set("username", user.username)
-			.set("firstName", user.firstName)
-			.set("lastName", user.lastName)
-			.set("password", "")
-			.set("email", user.email)
-			.set("created", Websom.Time.now())
-			.set("banned", false)
-			.set("verified", true)
-			.set("locked", false)
-			.set("connected", true)
-			.set("connectedAdapter", adapter)
-			.set("groups", new <string>array())
-			.run();
-		
+		let cUser = req.user();
+
 		let userEntity = new UserManager.User();
-		userEntity.id = res.id;
 		userEntity.collection = this.users;
+
+		if (cUser != null) {
+			if (cUser.anonymous) {
+				this.users.update().where("id", "==", cUser.id)
+					.set("username", user.username)
+					.set("firstName", user.firstName)
+					.set("lastName", user.lastName)
+					.set("password", "")
+					.set("email", user.email)
+					.set("banned", false)
+					.set("verified", true)
+					.set("locked", false)
+					.set("connected", true)
+					.set("connectedAdapter", adapter)
+					.set("groups", new <string>array())
+					.set("anonymous", false)
+					.run();
+
+				userEntity.id = cUser.id;
+			}
+		}else{
+			let res = this.users.insert()
+				.set("username", user.username)
+				.set("firstName", user.firstName)
+				.set("lastName", user.lastName)
+				.set("password", "")
+				.set("email", user.email)
+				.set("created", Websom.Time.now())
+				.set("banned", false)
+				.set("verified", true)
+				.set("locked", false)
+				.set("connected", true)
+				.set("connectedAdapter", adapter)
+				.set("groups", new <string>array())
+				.run();
+			
+			userEntity.id = res.id;
+		}
 
 		this.loginWithConnection(req, adapter, userEntity);
 	}

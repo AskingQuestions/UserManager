@@ -136,7 +136,21 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 			return (await _c_this.server.crypto.hashPassword/* async call */(value));
 			}).write("email").format("email").unique().setComputed("created", function (req) {
 			return Websom.Time.now();
-			}).set("banned", false).set("verified", verified).set("locked", false).set("connected", false).set("connectedAdapter", "").set("groups", []).route("/get").auth(_c_this.userGet).executes("select").read("username").read("created").read("id").read("bio").read("social").read("nickname").filter("default").field("id", "==").route("/login-info").auth(_c_this.userGet).executes("select").read("id").read("username").read("created").read("email").read("firstName").read("lastName").read("anonymous").filter("default", async function (req, query) {
+			}).set("banned", false).set("verified", verified).set("locked", false).set("connected", false).set("connectedAdapter", "").set("groups", []).beforeWrite(async function (ctx) {
+/*async*/
+			var user = (await ctx.request.user/* async call */());
+			if (user != null) {
+/*async*/
+				if (user.anonymous) {
+/*async*/
+					(await _c_this.users.update().where("id", "==", user.id).set("username", ctx.get("username")).set("password", ctx.getMutated("password")).set("email", ctx.get("email")).set("verified", verified).set("connected", false).set("connectedAdapter", "").set("groups", []).set("anonymous", false).run/* async call */());
+					(await ctx.request.endWithSuccess/* async call */("Account Created"));
+					}else{
+/*async*/
+						(await ctx.request.endWithError/* async call */("You are currently logged in"));
+					}
+				}
+			}).route("/get").auth(_c_this.userGet).executes("select").read("username").read("created").read("id").read("bio").read("social").read("nickname").filter("default").field("id", "==").route("/login-info").auth(_c_this.userGet).executes("select").read("id").read("username").read("created").read("email").read("firstName").read("lastName").read("anonymous").filter("default", async function (req, query) {
 /*async*/
 			var userId = (await req.session.get/* async call */("user"));
 			if (userId == null) {
@@ -209,6 +223,18 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 				return null;
 				}
 			var user = (await _c_this.users.makeEntity/* async call */(userResults.documents[0]));
+			var expiration = Websom.Time.now() - 1000 * 60 * 30;
+			var logins = (await _c_this.logins.where("user", "==", user.id).where("created", ">", expiration).limit(3).get/* async call */());
+			var ipLogins = (await _c_this.logins.where("ip", "==", ctx.request.client.address).where("created", ">", expiration).limit(3).get/* async call */());
+			console.log(logins.documents.length + ipLogins.documents.length);
+			if (logins.documents.length + ipLogins.documents.length >= 3) {
+/*async*/
+				if ((await ctx.request.checkCaptcha/* async call */()) == false) {
+/*async*/
+					(await ctx.request.endWithCaptcha/* async call */());
+					return null;
+					}
+				}
 			var passedPassword = (await _c_this.server.crypto.verifyPassword/* async call */(user.password, password));
 			if (user.verified == false) {
 /*async*/
@@ -298,10 +324,21 @@ UserManager.Module.prototype.permissions = function () {var _c_this = this; var 
 
 /*i async*/UserManager.Module.prototype.createUserWithConnection = async function (req, adapter, user) {var _c_this = this; var _c_root_method_arguments = arguments;
 /*async*/
-		var res = (await _c_this.users.insert().set("username", user.username).set("firstName", user.firstName).set("lastName", user.lastName).set("password", "").set("email", user.email).set("created", Websom.Time.now()).set("banned", false).set("verified", true).set("locked", false).set("connected", true).set("connectedAdapter", adapter).set("groups", []).run/* async call */());
+		var cUser = (await req.user/* async call */());
 		var userEntity = new UserManager.User();
-		userEntity.id = res.id;
 		userEntity.collection = _c_this.users;
+		if (cUser != null) {
+/*async*/
+			if (cUser.anonymous) {
+/*async*/
+				(await _c_this.users.update().where("id", "==", cUser.id).set("username", user.username).set("firstName", user.firstName).set("lastName", user.lastName).set("password", "").set("email", user.email).set("banned", false).set("verified", true).set("locked", false).set("connected", true).set("connectedAdapter", adapter).set("groups", []).set("anonymous", false).run/* async call */());
+				userEntity.id = cUser.id;
+				}
+			}else{
+/*async*/
+				var res = (await _c_this.users.insert().set("username", user.username).set("firstName", user.firstName).set("lastName", user.lastName).set("password", "").set("email", user.email).set("created", Websom.Time.now()).set("banned", false).set("verified", true).set("locked", false).set("connected", true).set("connectedAdapter", adapter).set("groups", []).run/* async call */());
+				userEntity.id = res.id;
+			}
 		(await _c_this.loginWithConnection/* async call */(req, adapter, userEntity));}
 
 /*i async*/UserManager.Module.prototype.handleConnectionSignin = async function (req, adapter, data) {var _c_this = this; var _c_root_method_arguments = arguments;
@@ -356,6 +393,9 @@ UserManager.Module.prototype.stop = function () {var _c_this = this; var _c_root
 }
 
 UserManager.Module.prototype.configure = function () {var _c_this = this; var _c_root_method_arguments = arguments;
+}
+
+UserManager.Module.prototype.api = function () {var _c_this = this; var _c_root_method_arguments = arguments;
 }
 
 /*i async*/UserManager.Module.prototype.registerCollection = async function (collection) {var _c_this = this; var _c_root_method_arguments = arguments;

@@ -22,6 +22,7 @@ template {
 
 										<button class="full user-login-button" @click="submitLogin()">Login</button>
 									</api-form>
+									<div v-html="$config.disclaimer"></div>
 
 									<div class="mini-options">
 										<a @click="setMode('reset')">Forgot your password?</a>
@@ -185,10 +186,10 @@ script {
 					password: this.login.password
 				});
 
-				this.websom.trigger("userSystem.manualLogin");
-
-				if (res.status == "success")
+				if (res.status == "success") {
+					this.websom.trigger("userSystem.manualLogin");
 					await this.loginSuccess();
+				}
 			},
 			async submitReset() {
 				let res = await this.$refs.resetForm.submit({
@@ -336,6 +337,12 @@ config {
 			"description": "The image to use on the login/signup screen",
 			"default": "",
 			"helper": "image"
+		},
+		"disclaimer": {
+			"type": "string",
+			"name": "Login disclaimer",
+			"description": "",
+			"default": ""
 		}
 	}
 }
